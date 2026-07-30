@@ -3,7 +3,6 @@ import Parser from 'rss-parser';
 import { ContentExtractionService } from '../content-extraction/content-extraction.service';
 import { CuratedFeedsService } from './curated-feeds.service';
 
-/** Mirrors lb-laterleaf/src/interfaces/curated-feed.interface.ts. */
 export interface FeedItem {
     title: string;
     link: string;
@@ -16,7 +15,6 @@ export interface FeedItem {
 }
 
 /**
- * Mirrors lb-laterleaf/src/services/curated-feed.service.ts. Fetches and
  * parses all active admin-curated RSS feeds, used to populate the
  * `CuratedArticle` table for the public Discover page.
  */

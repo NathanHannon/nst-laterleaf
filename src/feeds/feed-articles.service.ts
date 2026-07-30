@@ -4,7 +4,6 @@ import { In, Repository } from 'typeorm';
 import { FeedArticle } from './entities/feed-article.entity';
 
 /**
- * Mirrors lb-laterleaf/src/repositories/feed-article.repository.ts. Caches
  * articles fetched from a user's subscribed feeds.
  */
 @Injectable()

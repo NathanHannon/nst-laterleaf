@@ -22,12 +22,11 @@ import { ArticleCollectionsService } from './article-collections.service';
 import { ArticleCollection } from './entities/article-collection.entity';
 
 /**
- * Ports lb-laterleaf/src/controllers/collection-article.controller.ts
  * (endpoints actually used by the frontend: list, link, unlink). The
  * `POST /collections/:id/articles` (create brand-new Article from the
  * collection side) and `PATCH`/`DELETE /collections/:id/articles`
  * (bulk operations on linked articles) are not called by the frontend and
- * are deferred.
+ * are intentionally not exposed here.
  */
 @UseGuards(ClerkAuthGuard)
 @Controller('collections')

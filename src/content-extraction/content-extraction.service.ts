@@ -75,7 +75,6 @@ function getDomainConfig(url: string): DomainExtractionConfig | null {
 }
 
 /**
- * Ports lb-laterleaf/src/services/content-extraction.service.ts.
  * See copilot-instructions.md section 7 for the extraction pipeline
  * architecture (static fetch -> preCleanHtml -> JSDOM -> cleanDomForReadability
  * -> Readability.js -> hybrid merge with JSON-LD). Keep in sync with

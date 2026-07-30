@@ -13,7 +13,6 @@ export interface RelevantChunk {
 }
 
 /**
- * Mirrors lb-laterleaf/src/repositories/article-chunks.repository.ts.
  * Embeddings are inserted/queried via raw SQL (cast to `vector`) since
  * TypeORM has no native pgvector type — matching how ArticlesService
  * handles Article.embedding.

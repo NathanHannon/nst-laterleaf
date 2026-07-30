@@ -1,7 +1,6 @@
 import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
 
 /**
- * Mirrors lb-laterleaf/src/models/user-feed.model.ts (table: `user_feed`).
  * Junction between a `User` and a `Feed` — a user's subscription to a
  * particular RSS feed.
  *

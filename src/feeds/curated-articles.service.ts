@@ -4,7 +4,6 @@ import { LessThan, Repository } from 'typeorm';
 import { CuratedArticle } from './entities/curated-article.entity';
 
 /**
- * Mirrors lb-laterleaf/src/repositories/curated-article.repository.ts.
  */
 @Injectable()
 export class CuratedArticlesService {

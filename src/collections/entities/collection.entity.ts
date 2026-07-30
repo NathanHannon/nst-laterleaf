@@ -7,10 +7,9 @@ import {
 } from 'typeorm';
 
 /**
- * Mirrors lb-laterleaf/src/models/collection.model.ts.
  * `userId` kept as a plain FK column (no TypeORM relation) to avoid
  * circular imports with UsersModule, matching the Article/UserArticle
- * pattern established in phase 2.
+ * pattern used in this codebase.
  */
 @Entity({ name: 'collections' })
 export class Collection {

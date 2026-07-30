@@ -9,9 +9,6 @@ import { CollectionsService } from './collections.service';
 import { ArticleCollectionsService } from './article-collections.service';
 
 /**
- * Ports lb-laterleaf/src/controllers/collection-suggestion.controller.ts.
- * Deferred from Phase 3 (Collections + Tags) because both endpoints depend
- * on GenAiService (embeddings), which wasn't ported until Phase 4.
  */
 @UseGuards(ClerkAuthGuard)
 @Controller('collections')

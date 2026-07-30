@@ -22,7 +22,6 @@ import { FeedFetchingService } from './feed-fetching.service';
 import { UserFeed } from './entities/user-feed.entity';
 
 /**
- * Ports lb-laterleaf/src/controllers/user-feed.controller.ts. Manages a
  * user's personal RSS feed subscriptions (`GET/POST /users/me/feeds`,
  * `DELETE /users/me/feeds/:id`) and their cached articles
  * (`GET /users/me/feed-articles`).

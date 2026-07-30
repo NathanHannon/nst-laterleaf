@@ -19,7 +19,6 @@ import { UserArticlesService } from './user-articles.service';
 import type { Highlight } from './entities/user-article.entity';
 
 /**
- * Ports lb-laterleaf/src/controllers/annotation.controller.ts. Operates
  * directly on the `UserArticle.highlights` jsonb array.
  */
 @UseGuards(ClerkAuthGuard)

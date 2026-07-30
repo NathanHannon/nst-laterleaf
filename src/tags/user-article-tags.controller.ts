@@ -5,10 +5,9 @@ import { UserArticleTagsService } from './user-article-tags.service';
 import { Tag } from './entities/tag.entity';
 
 /**
- * Ports lb-laterleaf/src/controllers/user-article-tag.controller.ts
  * (GET/PATCH/DELETE only — the original POST endpoint was already moved to
- * TagController.addTagToUserArticle in lb-laterleaf, which is deferred to
- * the GenAI services phase since it calls GenAiService.generateEmbeddings).
+ * TagController.addTagToUserArticle in lb-laterleaf, where embeddings are
+ * generated before linking tags).
  *
  * NOTE: matches the ORIGINAL controller's behavior of NOT verifying that
  * the `:id` UserArticle actually belongs to the requesting user — only

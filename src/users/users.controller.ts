@@ -24,7 +24,6 @@ const BASIC_CREDITS_LIMIT = -1; // Basic summaries are unlimited
 const PRO_CREDITS_LIMIT = 5;
 
 /**
- * Ports lb-laterleaf/src/controllers/user.controller.ts.
  */
 @UseGuards(ClerkAuthGuard)
 @Controller('users')

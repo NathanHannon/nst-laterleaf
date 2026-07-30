@@ -26,7 +26,6 @@ const MONTH_NAMES = [
 ];
 
 /**
- * Ports lb-laterleaf/src/controllers/stats.controller.ts.
  */
 @UseGuards(ClerkAuthGuard)
 @Controller('stats')

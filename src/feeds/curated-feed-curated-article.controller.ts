@@ -7,7 +7,6 @@ import { CuratedArticlesService } from './curated-articles.service';
 import { CuratedArticle } from './entities/curated-article.entity';
 
 /**
- * Mirrors lb-laterleaf/src/controllers/curated-feed-curated-article.controller.ts
  * (the LoopBack `hasMany` nested-resource controller). Admin-only listing
  * and creation of `CuratedArticle`s scoped to a specific `CuratedFeed`.
  *

@@ -21,7 +21,6 @@ import { CollectionsService } from './collections.service';
 import { Collection } from './entities/collection.entity';
 
 /**
- * Ports lb-laterleaf/src/controllers/collection.controller.ts.
  */
 @UseGuards(ClerkAuthGuard)
 @Controller('collections')

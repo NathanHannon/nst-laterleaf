@@ -23,7 +23,6 @@ interface ResearchResponse {
 }
 
 /**
- * Ports lb-laterleaf/src/controllers/research.controller.ts.
  */
 @UseGuards(ClerkAuthGuard)
 @Controller('articles')

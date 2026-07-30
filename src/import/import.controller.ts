@@ -12,7 +12,6 @@ interface ParsedBookmark {
 }
 
 /**
- * Ports lb-laterleaf/src/controllers/import.controller.ts. Parses an
  * exported file from Pocket, Instapaper, or generic HTML/CSV/JSON bookmarks
  * and returns the extracted URLs — the frontend then imports them one by
  * one via the existing `POST /articles/import` endpoint (dedup/moderation).

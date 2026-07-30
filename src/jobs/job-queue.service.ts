@@ -4,7 +4,6 @@ import * as path from 'path';
 import { PgBoss } from 'pg-boss';
 
 /**
- * Ports lb-laterleaf/src/services/job-queue.service.ts. Wraps pg-boss
  * (Postgres-backed job queue) for the summary-pro, audio-generation, and
  * article-chunking queues, plus an atomic Postgres-backed rate limiter.
  *

@@ -4,7 +4,6 @@ import { FindOptionsWhere, Repository } from 'typeorm';
 import { CuratedFeed } from './entities/curated-feed.entity';
 
 /**
- * Mirrors lb-laterleaf/src/repositories/curated-feed.repository.ts. Backs
  * the admin-only `CuratedFeedController` CRUD.
  */
 @Injectable()

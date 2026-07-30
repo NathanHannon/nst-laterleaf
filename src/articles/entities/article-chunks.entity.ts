@@ -1,7 +1,6 @@
 import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
 
 /**
- * Mirrors lb-laterleaf/src/models/article-chunks.model.ts.
  *
  * NOTE: `chunk_embedding` is a pgvector `vector(768)` column. TypeORM has no
  * native pgvector type, so it's mapped as raw `text` (select: false) and

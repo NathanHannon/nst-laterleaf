@@ -1,7 +1,6 @@
 import { Column, Entity, PrimaryColumn } from 'typeorm';
 
 /**
- * Mirrors lb-laterleaf/src/models/user-article-tag.model.ts — the pure
  * junction table between UserArticle and Tag. `id` is generated in
  * application code (see TagsService), matching the original model.
  */

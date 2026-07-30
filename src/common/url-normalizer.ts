@@ -1,5 +1,4 @@
 /**
- * Ports lb-laterleaf/src/utils/url-normalizer.ts.
  *
  * Normalizes URLs to prevent duplicate articles caused by tracking
  * parameters, social media parameters, and other non-essential URL

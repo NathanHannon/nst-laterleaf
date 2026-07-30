@@ -11,9 +11,6 @@ import { UserArticleTagsService } from './user-article-tags.service';
 import { Tag } from './entities/tag.entity';
 
 /**
- * Ports lb-laterleaf/src/controllers/tag.controller.ts. Deferred from
- * Phase 3 (Collections + Tags) because both endpoints depend on
- * GenAiService (embeddings), which wasn't ported until Phase 4.
  */
 @UseGuards(ClerkAuthGuard)
 @Controller('tags')

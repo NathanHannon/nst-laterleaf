@@ -14,11 +14,9 @@ export type SubscriptionStatus =
     | 'unpaid';
 
 /**
- * Mirrors lb-laterleaf/src/models/user.model.ts.
  *
  * NOTE: `collections` / `articles` relations are intentionally omitted here.
- * They will be added back once the Collection and Article modules are
- * ported in a later phase.
+ * Access patterns use explicit FK columns and service-level joins.
  */
 @Entity({ name: 'users' })
 export class User {

@@ -6,14 +6,13 @@ import { FeedFetchingService } from './feed-fetching.service';
 
 /**
  * Mirrors the feed-related cron jobs from
- * lb-laterleaf/src/services/cron-job.service.ts:
  *  - `fetch-curated-feeds` (hourly)
  *  - `cleanup-curated-articles` (daily at 2 AM)
  *  - `fetch-user-rss-feeds` (every 15 minutes)
  *
- * The other cron jobs in the original (metadata backfill, article-chunking
- * backfill, rate-limit cleanup, weekly newsletter) belong to other
- * services/phases and are intentionally NOT ported here — see repo memory.
+ * Other jobs from the original service (metadata backfill, article-chunking
+ * backfill, rate-limit cleanup, weekly newsletter) are owned by other
+ * modules/services and intentionally out of scope for this class.
  */
 @Injectable()
 export class FeedsCronService {

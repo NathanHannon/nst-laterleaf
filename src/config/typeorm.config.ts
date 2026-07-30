@@ -24,7 +24,6 @@ import { CuratedArticle } from '../feeds/entities/curated-article.entity';
  *  2. Local cert file — use in development
  *  3. rejectUnauthorized: false — fallback for trusted internal networks
  *
- * Mirrors lb-laterleaf/src/datasources/laterleaf.datasource.ts
  */
 function buildSslConfig(configService: ConfigService): object {
     const caCert = configService.get<string>('DATABASE_CA_CERT');
@@ -53,9 +52,7 @@ export function buildTypeOrmConfig(
         database: configService.get<string>('DATABASE_NAME'),
         ssl: buildSslConfig(configService),
         entities: [User, Article, UserArticle, ArticleChunks, Collection, ArticleCollection, Tag, UserArticleTag, BlockedDomain, Feed, FeedArticle, UserFeed, CuratedFeed, CuratedArticle],
-        // Schema is managed via lb-laterleaf's `npm run migrate` for now.
-        // Keep synchronize disabled to avoid clobbering the existing schema
-        // while both backends coexist during the phased migration.
+        // Schema is migration-managed; keep synchronize disabled.
         synchronize: false,
     };
 }

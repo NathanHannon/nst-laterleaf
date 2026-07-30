@@ -4,7 +4,6 @@ import { Repository } from 'typeorm';
 import { BlockedDomain } from './entities/blocked-domain.entity';
 
 /**
- * Mirrors lb-laterleaf/src/repositories/blocked-domain.repository.ts.
  */
 @Injectable()
 export class BlockedDomainsService {

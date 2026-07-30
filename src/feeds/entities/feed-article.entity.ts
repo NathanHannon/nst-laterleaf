@@ -1,7 +1,6 @@
 import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
 
 /**
- * Mirrors lb-laterleaf/src/models/feed-article.model.ts (table:
  * `feed_articles`). Caches articles fetched from a user's subscribed
  * `Feed`. Deduplicated by unique `url`.
  */

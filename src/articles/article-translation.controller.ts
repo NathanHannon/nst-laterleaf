@@ -4,7 +4,6 @@ import { ArticlesService } from './articles.service';
 import { GenAiService } from '../genai/gen-ai.service';
 
 /**
- * Ports lb-laterleaf/src/controllers/article-translation.controller.ts.
  */
 @UseGuards(ClerkAuthGuard)
 @Controller('articles')

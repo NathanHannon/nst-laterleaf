@@ -22,7 +22,6 @@ import { GenAiService } from '../genai/gen-ai.service';
 import type { ChatMessage } from './entities/user-article.entity';
 
 /**
- * Ports lb-laterleaf/src/controllers/chat.controller.ts.
  */
 @UseGuards(ClerkAuthGuard)
 @Controller('articles')

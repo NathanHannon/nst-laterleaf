@@ -18,7 +18,6 @@ import { CuratedFeedsService } from './curated-feeds.service';
 import { CuratedFeed } from './entities/curated-feed.entity';
 
 /**
- * Mirrors lb-laterleaf/src/controllers/curated-feed.controller.ts.
  * Admin-only CRUD for managing the RSS feed sources used to populate the
  * public Discover page.
  *

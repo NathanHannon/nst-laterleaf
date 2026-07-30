@@ -30,7 +30,6 @@ interface ChunkingJobData {
 }
 
 /**
- * Ports lb-laterleaf/src/services/job-worker.service.ts. Registers pg-boss
  * workers for the summary-pro, audio-generation, and article-chunking
  * queues. Uses OnModuleInit/OnModuleDestroy as the Nest equivalent of LB's
  * `@lifeCycleObserver('services')` group.

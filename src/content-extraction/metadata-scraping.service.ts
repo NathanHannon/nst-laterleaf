@@ -28,7 +28,6 @@ interface ExtractionRule {
 }
 
 /**
- * Ports lb-laterleaf/src/services/metadata-scraping.service.ts.
  */
 @Injectable()
 export class MetadataScrapingService {

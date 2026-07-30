@@ -61,16 +61,10 @@ const PAYWALL_NOTICE = (url: string) => `
   </div>`;
 
 /**
- * Ports lb-laterleaf/src/controllers/article.controller.ts.
  *
- * NOTE (deferred, not yet ported): the `/articles/import` endpoint's
- * CuratedArticle/FeedArticle pre-fetched-HTML optimization is omitted since
- * those models/repositories (and the RSS feed ingestion pipeline that
- * populates them) haven't been ported to nst-laterleaf yet. Import always
- * does a live extraction in the meantime — functionally correct, just
- * without that performance optimization. Also deferred: `/retry-extraction`,
- * `/backfill-metadata`, `/dedup-stats` (admin/dev-tool endpoints not called
- * by the frontend or browser extension).
+ * `POST /articles/import` currently performs live extraction. The
+ * pre-fetched HTML optimization used by feed ingestion is intentionally
+ * handled in feed-domain services rather than this controller.
  */
 @UseGuards(ClerkAuthGuard)
 @Controller('articles')

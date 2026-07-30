@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 
 /**
- * Ports lb-laterleaf/src/services/audio-processing.service.ts.
  * Stateless helper for splitting podcast scripts into TTS-safe chunks and
  * converting/detecting raw PCM audio via FFmpeg.
  */

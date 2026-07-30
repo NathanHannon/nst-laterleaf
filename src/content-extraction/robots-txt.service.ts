@@ -8,7 +8,6 @@ interface Robots {
 }
 
 /**
- * Ports lb-laterleaf/src/services/robots-txt.service.ts. Singleton (default
  * Nest provider scope) to maintain the in-memory robots.txt cache, matching
  * the original's `BindingScope.SINGLETON`.
  */

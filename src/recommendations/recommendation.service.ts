@@ -49,7 +49,6 @@ function shuffleArray<T>(array: T[]): T[] {
 }
 
 /**
- * Ports lb-laterleaf/src/services/recommendation.service.ts. Generates
  * personalized article recommendations via a hybrid approach: interest
  * clustering over a user's saved-article embeddings (K-Means with time
  * decay + like/tag boosts + a negative signal from dismissed articles),

@@ -1,5 +1,4 @@
 /**
- * Mirrors lb-laterleaf/src/constants/ai-models.ts.
  */
 export const GEMINI_MODELS = {
     PRO_TEXT: 'gemini-3-flash-preview',

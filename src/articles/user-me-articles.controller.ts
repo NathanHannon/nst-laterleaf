@@ -8,7 +8,6 @@ import { UserArticlesService } from './user-articles.service';
 import { Article } from './entities/article.entity';
 
 /**
- * Ports lb-laterleaf/src/controllers/user-article.controller.ts
  * (`GET /users/me/articles`). Unlike `GET /articles`, this returns bare
  * Article rows (no bookmark/archive/summary status merged in), matching
  * the original hasMany-through relation behavior.

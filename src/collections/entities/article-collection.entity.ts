@@ -1,7 +1,6 @@
 import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
 
 /**
- * Mirrors lb-laterleaf/src/models/article-collection.model.ts — the pure
  * junction table between Collection and Article.
  */
 @Entity({ name: 'article_collections' })

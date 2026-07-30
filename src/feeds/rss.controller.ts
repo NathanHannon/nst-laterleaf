@@ -21,7 +21,6 @@ import { UserArticlesService } from '../articles/user-articles.service';
 import { ArticlesService } from '../articles/articles.service';
 
 /**
- * Mirrors lb-laterleaf/src/controllers/rss.controller.ts. Generates a
  * personal podcast RSS feed from a Pro user's saved articles that have
  * generated audio (`UserArticle.audioLocation`).
  */

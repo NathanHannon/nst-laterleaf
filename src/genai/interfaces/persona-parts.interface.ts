@@ -1,5 +1,4 @@
 /**
- * Mirrors lb-laterleaf/src/interfaces/persona-parts.interface.ts.
  */
 export const PERSONA_PAIRS = {
     // Option 1: Zephyr & Charon (Default)

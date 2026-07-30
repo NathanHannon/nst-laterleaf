@@ -15,7 +15,6 @@ interface RevenueCatEvent {
 }
 
 /**
- * Ports lb-laterleaf/src/controllers/revenuecat.controller.ts. Handles the
  * RevenueCat subscription webhook (auth via a static shared-secret header,
  * not a signature scheme) plus the authenticated customer-portal endpoint.
  * Kept as a single controller (no `@Controller('webhooks')` prefix) so the

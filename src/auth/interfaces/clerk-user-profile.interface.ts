@@ -1,7 +1,6 @@
 /**
  * Shape of the `req.user` object attached by ClerkStrategy after a
  * successful JWT verification. Mirrors the UserProfile constructed in
- * lb-laterleaf/src/authentication/clerk.strategy.ts.
  */
 export interface ClerkUserProfile {
     id: string;

@@ -4,7 +4,6 @@ import { Repository } from 'typeorm';
 import { UserFeed } from './entities/user-feed.entity';
 
 /**
- * Mirrors lb-laterleaf/src/repositories/user-feed.repository.ts. Junction
  * between a `User` and a `Feed` (a subscription).
  */
 @Injectable()

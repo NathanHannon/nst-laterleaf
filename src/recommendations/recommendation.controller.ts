@@ -20,7 +20,6 @@ interface RecommendationResponse {
 }
 
 /**
- * Ports lb-laterleaf/src/controllers/recommendation.controller.ts.
  */
 @UseGuards(ClerkAuthGuard)
 @Controller('recommendations')

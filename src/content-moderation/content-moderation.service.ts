@@ -8,7 +8,6 @@
  * This prevents inappropriate content from appearing in recommendations while
  * preserving user freedom to save any content to personal libraries.
  *
- * Ported from lb-laterleaf/src/services/content-moderation.service.ts.
  * NOTE: the original LB service was `@injectable({scope: TRANSIENT})`; here
  * it's a regular (singleton) Nest provider, which better matches the intent
  * of the in-memory blocked-domains cache and rate-limit counters (persisting

@@ -1,13 +1,11 @@
 import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
 
 /**
- * Mirrors lb-laterleaf/src/models/feed.model.ts (table: `feed`). Represents
  * a user-subscribed RSS feed (as opposed to `CuratedFeed`, which is
  * admin-curated for the Discover page).
  *
- * NOTE: `userFeeds` (hasMany UserFeed) relation is intentionally omitted,
- * matching the "no TypeORM relations" convention used throughout this
- * migration — joins are done manually in services.
+ * NOTE: `userFeeds` (hasMany UserFeed) relation is intentionally omitted;
+ * joins are done manually in services.
  */
 @Entity({ name: 'feed' })
 export class Feed {

@@ -3,7 +3,6 @@ import AWS from 'aws-sdk';
 import crypto from 'crypto';
 
 /**
- * Ports lb-laterleaf/src/services/storage.service.ts — Cloudflare R2 (S3-compatible)
  * audio upload/retrieval. Injectable() (request-scoped equivalent of LB's TRANSIENT
  * not needed here since it's stateless besides the S3 client, so DEFAULT scope is fine).
  */

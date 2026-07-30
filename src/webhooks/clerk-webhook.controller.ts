@@ -28,7 +28,6 @@ type ClerkBillingSubscriptionItem = {
 };
 
 /**
- * Ports lb-laterleaf/src/controllers/clerk.controller.ts (billing +
  * user-lifecycle webhooks). Not gated by ClerkAuthGuard — Clerk webhook
  * requests carry svix-* signature headers (verified below), not a user JWT.
  *

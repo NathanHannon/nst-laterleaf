@@ -9,7 +9,6 @@ import { Collection } from './entities/collection.entity';
 
 /**
  * Ports the `GET /articles/{id}/collections` endpoint from
- * lb-laterleaf/src/controllers/article.controller.ts. Kept in the
  * Collections module (rather than ArticlesModule) to avoid a circular
  * module dependency, since it needs CollectionsService for ownership
  * filtering.

@@ -6,7 +6,6 @@ import { UsersService } from '../users/users.service';
 import { GenAiService } from './gen-ai.service';
 
 /**
- * Ports lb-laterleaf/src/controllers/gen-ai.controller.ts.
  */
 @UseGuards(ClerkAuthGuard)
 @Controller('ai')

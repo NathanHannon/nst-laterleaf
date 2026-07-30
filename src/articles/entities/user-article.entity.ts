@@ -15,14 +15,13 @@ export interface Highlight {
 }
 
 /**
- * Mirrors lb-laterleaf/src/models/user-article.model.ts. This is the
  * critical junction model — most per-user article state (status,
  * bookmarks, summaries, chat, audio) lives here, not on Article.
  *
- * NOTE: `tags` / `userArticleTags` relations are omitted until the Tags
- * module is ported. `userId` / `articleId` are kept as plain FK columns
- * (no TypeORM @ManyToOne) to avoid circular module imports between
- * UsersModule and ArticlesModule; joins are done manually in services.
+ * NOTE: `tags` / `userArticleTags` relations are intentionally omitted.
+ * `userId` / `articleId` are kept as plain FK columns (no TypeORM
+ * @ManyToOne) to avoid circular module imports between UsersModule and
+ * ArticlesModule; joins are done manually in services.
  */
 @Entity({ name: 'user_articles' })
 export class UserArticle {

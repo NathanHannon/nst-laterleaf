@@ -1,7 +1,6 @@
 import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
 
 /**
- * Mirrors lb-laterleaf/src/models/curated-feed.model.ts (table:
  * `curated_feeds`). Admin-managed RSS feed sources used to populate the
  * public "Discover" page (`CuratedArticle`).
  *

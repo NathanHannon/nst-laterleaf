@@ -24,7 +24,6 @@ interface ExportData {
 }
 
 /**
- * Ports lb-laterleaf/src/controllers/export.controller.ts.
  */
 @UseGuards(ClerkAuthGuard)
 @Controller('export')

@@ -1,7 +1,6 @@
 import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
 
 /**
- * Mirrors lb-laterleaf/src/models/curated-article.model.ts (table:
  * `curated_articles`). Articles fetched from admin-curated `CuratedFeed`
  * sources, shown on the public "Discover" page.
  */

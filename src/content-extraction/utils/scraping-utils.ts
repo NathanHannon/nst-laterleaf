@@ -1,6 +1,5 @@
 /**
  * A collection of utilities to make web scraping more robust and human-like.
- * Ports lb-laterleaf/src/utils/scraping-utils.ts.
  */
 
 const USER_AGENTS = [

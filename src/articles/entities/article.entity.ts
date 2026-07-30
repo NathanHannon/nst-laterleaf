@@ -7,12 +7,10 @@ import {
 } from 'typeorm';
 
 /**
- * Mirrors lb-laterleaf/src/models/article.model.ts.
  *
  * NOTE: `articleChunks` (hasMany ArticleChunks) and `users` (hasMany-through
- * UserArticle) relations are intentionally omitted. They'll be added once
- * the ArticleChunks/Tags modules are ported. Joins against `user_articles`
- * are done via UserArticlesService in the meantime.
+ * UserArticle) relations are intentionally omitted. Joins against
+ * `user_articles` are done via UserArticlesService.
  *
  * NOTE: `embedding` is a pgvector `vector(768)` column. TypeORM has no
  * native pgvector type, so it's mapped as raw `text` (select: false, so it

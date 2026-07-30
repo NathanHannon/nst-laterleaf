@@ -4,7 +4,6 @@ import { Repository } from 'typeorm';
 import { Feed } from './entities/feed.entity';
 
 /**
- * Mirrors lb-laterleaf/src/repositories/feed.repository.ts. Backs
  * `UserFeedController` (a user's personal RSS subscriptions) and
  * `FeedFetchingService`.
  */

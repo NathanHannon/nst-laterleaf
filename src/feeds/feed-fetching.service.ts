@@ -6,7 +6,6 @@ import { FeedArticlesService } from './feed-articles.service';
 import { Feed } from './entities/feed.entity';
 
 /**
- * Mirrors lb-laterleaf/src/services/feed-fetching.service.ts. Fetches and
  * caches articles from a user's personally-subscribed RSS `Feed`s (as
  * opposed to `CuratedFeedFetchingService`, which handles admin-curated
  * Discover-page feeds).

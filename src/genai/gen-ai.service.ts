@@ -29,7 +29,6 @@ const LANGUAGE_MAP: Record<string, string> = {
 };
 
 /**
- * Ports lb-laterleaf/src/services/gen-ai.service.ts. Uses the `@google/genai`
  * Interactions API (`ai.interactions.create()`) for text/podcast-script/chat
  * generation and Google Cloud TTS (Standard voices) for single-speaker speech.
  * Stateless besides its AudioProcessingService dependency, so default

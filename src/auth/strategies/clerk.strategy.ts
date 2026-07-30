@@ -6,7 +6,6 @@ import * as jwksRsa from 'jwks-rsa';
 import { ClerkUserProfile } from '../interfaces/clerk-user-profile.interface';
 
 /**
- * Ports lb-laterleaf/src/authentication/clerk.strategy.ts to Nest's
  * Passport integration. Verifies Clerk-issued RS256 JWTs against Clerk's
  * JWKS endpoint and builds a ClerkUserProfile for `req.user`.
  */
