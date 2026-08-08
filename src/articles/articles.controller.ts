@@ -809,19 +809,35 @@ export class ArticlesController {
         let isEligibleForRecommendation = false;
         if (hasContent) {
             try {
-                const moderationResult = await this.contentModerationService.moderateForRecommendations(
+                const saveModeration = await this.contentModerationService.moderateForSaving(
                     normalizedUrl,
                     payload.title,
                     payload.excerpt || '',
                     payload.content,
                     payload.imageUrl || payload.metadata?.ogImage,
                 );
-                isEligibleForRecommendation = moderationResult.isEligibleForRecommendation;
+
+                if (saveModeration.shouldBlockSave) {
+                    console.warn(
+                        `[MODERATION] Extension article blocked for save (${normalizedUrl}): ${saveModeration.reasoning}`,
+                    );
+                    hasContent = false;
+                } else {
+                    const moderationResult = await this.contentModerationService.moderateForRecommendations(
+                        normalizedUrl,
+                        payload.title,
+                        payload.excerpt || '',
+                        payload.content,
+                        payload.imageUrl || payload.metadata?.ogImage,
+                    );
+                    isEligibleForRecommendation = moderationResult.isEligibleForRecommendation;
+                }
             } catch (error) {
                 console.error(
-                    '[MODERATION] Failed to evaluate extension article eligibility, defaulting to ineligible:',
+                    '[MODERATION] Failed to evaluate extension moderation checks, defaulting to no content and ineligible:',
                     error,
                 );
+                hasContent = false;
             }
         }
 
