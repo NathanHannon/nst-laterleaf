@@ -9,3 +9,9 @@ export const GEMINI_MODELS = {
     PODCAST: 'gemini-3-flash-preview',
     IMAGE: 'gemini-3.1-flash-image',
 } as const;
+
+export const OPENAI_MODELS = {
+    PRO_TEXT: 'gpt-5.4-mini',
+    FREE_TEXT: 'gpt-5.6-luna',
+    PODCAST: 'gpt-5.4-mini',
+} as const;

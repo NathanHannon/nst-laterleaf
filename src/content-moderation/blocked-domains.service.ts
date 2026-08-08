@@ -45,6 +45,10 @@ export class BlockedDomainsService {
         return blockedDomains.map((bd) => bd.domain.toLowerCase());
     }
 
+    findAll(): Promise<BlockedDomain[]> {
+        return this.blockedDomainsRepository.find({ order: { createdAt: 'DESC' } });
+    }
+
     create(data: { domain: string; reason: string; notes?: string }): Promise<BlockedDomain> {
         const blockedDomain = this.blockedDomainsRepository.create(data);
         return this.blockedDomainsRepository.save(blockedDomain);

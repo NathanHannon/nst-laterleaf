@@ -3,6 +3,7 @@ import {
     Body,
     Controller,
     Delete,
+    ForbiddenException,
     Get,
     HttpException,
     HttpStatus,
@@ -18,6 +19,7 @@ import {
     UnauthorizedException,
     UseGuards,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import type { Response } from 'express';
 import { FindOptionsWhere } from 'typeorm';
 import { ClerkAuthGuard } from '../auth/guards/clerk-auth.guard';
@@ -37,7 +39,8 @@ import { StorageService } from '../storage/storage.service';
 import { GenAiService } from '../genai/gen-ai.service';
 import { JobQueueService } from '../jobs/job-queue.service';
 import { UrlNormalizer } from '../common/url-normalizer';
-import { GEMINI_MODELS } from '../genai/constants/ai-models';
+import { GEMINI_MODELS, OPENAI_MODELS } from '../genai/constants/ai-models';
+import type { GenerationProviderName } from '../genai/providers/generation-provider.interface';
 
 type ArticleWithStatus = Partial<Article> & {
     isBookmarked: boolean;
@@ -80,7 +83,28 @@ export class ArticlesController {
         private readonly storageService: StorageService,
         private readonly genAiService: GenAiService,
         private readonly jobQueueService: JobQueueService,
+        private readonly configService: ConfigService,
     ) { }
+
+    private resolveAdminProviderOverride(
+        currentUser: ClerkUserProfile,
+        provider?: string,
+    ): GenerationProviderName | undefined {
+        if (!provider) return undefined;
+        if (provider !== 'gemini' && provider !== 'openai-compatible') {
+            throw new BadRequestException('Unsupported generation provider');
+        }
+
+        const adminClerkIds = this.configService
+            .get<string>('ADMIN_CLERK_IDS')
+            ?.split(',')
+            .map((id) => id.trim());
+        const isAdmin = adminClerkIds?.includes(currentUser.clerkId) || currentUser.publicMetadata?.role === 'admin';
+        if (!isAdmin) {
+            throw new ForbiddenException('Provider override is restricted to admins');
+        }
+        return provider;
+    }
 
     private async getUserId(currentUser: ClerkUserProfile): Promise<string> {
         const user = await this.usersService.findByClerkId(currentUser.clerkId);
@@ -347,6 +371,7 @@ export class ArticlesController {
         userId: string,
         articleId: string,
         language?: string,
+        provider?: GenerationProviderName,
     ): Promise<{
         summary: string;
         model: string;
@@ -356,11 +381,11 @@ export class ArticlesController {
     }> {
         // Pro Summaries: queue immediately due to strict rate limits
         if (isProSummary) {
-            await this.jobQueueService.addSummaryJob({ articleId, userId, content, isPro: true, language });
+            await this.jobQueueService.addSummaryJob({ articleId, userId, content, isPro: true, language, provider });
 
             return {
                 summary: 'pending',
-                model: GEMINI_MODELS.PRO_TEXT,
+                model: provider === 'openai-compatible' ? OPENAI_MODELS.PRO_TEXT : GEMINI_MODELS.PRO_TEXT,
                 status: 'pending',
                 fallbackUsed: false,
                 queuedForRetry: true,
@@ -373,12 +398,12 @@ export class ArticlesController {
 
         for (let attempt = 1; attempt <= maxRetries; attempt++) {
             try {
-                const summary = await this.genAiService.generateSummary(content, false, undefined, language);
+                const summary = await this.genAiService.generateSummary(content, false, undefined, language, provider);
 
                 if (summary) {
                     return {
                         summary,
-                        model: GEMINI_MODELS.FREE_TEXT,
+                        model: provider === 'openai-compatible' ? OPENAI_MODELS.FREE_TEXT : GEMINI_MODELS.FREE_TEXT,
                         status: 'completed',
                         fallbackUsed: false,
                         queuedForRetry: false,
@@ -400,12 +425,12 @@ export class ArticlesController {
 
         // Fallback model
         try {
-            const summary = await this.genAiService.generateSummary(content, false);
+            const summary = await this.genAiService.generateSummary(content, false, undefined, language, provider);
 
             if (summary) {
                 return {
                     summary,
-                    model: GEMINI_MODELS.FALLBACK,
+                    model: provider === 'openai-compatible' ? OPENAI_MODELS.FREE_TEXT : GEMINI_MODELS.FALLBACK,
                     status: 'completed',
                     fallbackUsed: true,
                     queuedForRetry: false,
@@ -1163,6 +1188,7 @@ export class ArticlesController {
         @Query('force') force?: string,
         @Query('usePro') usePro?: string,
         @Query('language') language?: string,
+        @Query('provider') provider?: string,
     ): Promise<{
         summary: string;
         model?: string;
@@ -1171,6 +1197,7 @@ export class ArticlesController {
         queuedForRetry?: boolean;
     }> {
         const { user, hasProAccess, metadata } = await this.getAuthContext(currentUser);
+        const providerOverride = this.resolveAdminProviderOverride(currentUser, provider);
         const forceRegenerate = force === 'true';
         const usePreferPro = usePro === 'true';
 
@@ -1214,6 +1241,7 @@ export class ArticlesController {
                 user.id,
                 id,
                 language,
+                providerOverride,
             );
 
             if (result.status === 'completed') {

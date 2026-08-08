@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/commo
 import * as fs from 'fs';
 import * as path from 'path';
 import { PgBoss } from 'pg-boss';
+import type { GenerationProviderName } from '../genai/providers/generation-provider.interface';
 
 /**
  * (Postgres-backed job queue) for the summary-pro, audio-generation, and
@@ -126,6 +127,7 @@ export class JobQueueService implements OnModuleInit, OnModuleDestroy {
         content: string;
         isPro: boolean;
         language?: string;
+        provider?: GenerationProviderName;
     }) {
         if (!data.isPro) {
             this.logger.warn('Basic summaries do not use the job queue anymore (unlimited rate).');
@@ -177,14 +179,21 @@ export class JobQueueService implements OnModuleInit, OnModuleDestroy {
         const getStats = async (name: string) => {
             try {
                 const [stats] = await this.boss.getQueueStats(name);
+                const waiting = (stats?.queuedCount ?? 0) + (stats?.readyCount ?? 0);
+                const active = stats?.activeCount ?? 0;
+                const delayed = stats?.deferredCount ?? 0;
+                const failed = stats?.failedCount ?? 0;
+                const total = stats?.totalCount ?? 0;
                 return {
-                    queued: stats?.queuedCount ?? 0,
-                    active: stats?.activeCount ?? 0,
-                    deferred: stats?.deferredCount ?? 0,
-                    total: stats?.totalCount ?? 0,
+                    waiting,
+                    active,
+                    delayed,
+                    failed,
+                    completed: Math.max(0, total - waiting - active - delayed - failed),
+                    paused: 0,
                 };
             } catch {
-                return { queued: 0, active: 0, deferred: 0, total: 0 };
+                return { waiting: 0, active: 0, delayed: 0, failed: 0, completed: 0, paused: 0 };
             }
         };
 

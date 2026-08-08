@@ -21,6 +21,7 @@ import { ExportModule } from './export/export.module';
 import { ImportModule } from './import/import.module';
 import { StatsModule } from './stats/stats.module';
 import { FeedsModule } from './feeds/feeds.module';
+import { AdminModule } from './admin/admin.module';
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { FeedsModule } from './feeds/feeds.module';
     ImportModule,
     StatsModule,
     FeedsModule,
+    AdminModule,
   ],
   controllers: [AppController],
   providers: [AppService],

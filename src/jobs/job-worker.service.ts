@@ -6,6 +6,7 @@ import { ArticleChunksService } from '../articles/article-chunks.service';
 import { GenAiService } from '../genai/gen-ai.service';
 import { StorageService } from '../storage/storage.service';
 import { JobQueueService } from './job-queue.service';
+import type { GenerationProviderName } from '../genai/providers/generation-provider.interface';
 
 interface SummaryJobData {
     articleId: string;
@@ -13,6 +14,7 @@ interface SummaryJobData {
     content: string;
     isPro: boolean;
     language?: string;
+    provider?: GenerationProviderName;
 }
 interface AudioJobData {
     articleId: string;
@@ -90,10 +92,10 @@ export class JobWorkerService implements OnModuleInit, OnModuleDestroy {
     }
 
     private async processSummaryJob(data: SummaryJobData) {
-        const { articleId, userId, content, isPro, language } = data;
+        const { articleId, userId, content, isPro, language, provider } = data;
         this.logger.log(`[Worker] Processing summary for article ${articleId} (Pro: ${isPro}, Lang: ${language ?? 'en'})`);
         try {
-            const summary = await this.genAiService.generateSummary(content, isPro, undefined, language);
+            const summary = await this.genAiService.generateSummary(content, isPro, undefined, language, provider);
             if (summary) {
                 const userArticle = await this.userArticlesService.findByUserAndArticle(userId, articleId);
                 if (userArticle) {
