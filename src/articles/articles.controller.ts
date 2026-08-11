@@ -1578,6 +1578,7 @@ export class ArticlesController {
         canGenerate: boolean;
         isProUser: boolean;
         audioLanguage?: string;
+        podcastScript?: { script?: string; generatedAt?: string; duration?: string; style?: string; voices?: string; personaId?: string; format?: string; mimeType?: string };
     }> {
         const { user, hasProAccess } = await this.getAuthContext(currentUser);
 
@@ -1595,6 +1596,7 @@ export class ArticlesController {
                 canGenerate: hasProAccess,
                 isProUser: hasProAccess,
                 audioLanguage: userArticle.audioLanguage,
+                podcastScript: userArticle.podcastScript as { script?: string; generatedAt?: string; duration?: string; style?: string; voices?: string; personaId?: string; format?: string; mimeType?: string } | undefined,
             };
         }
 
@@ -1605,6 +1607,7 @@ export class ArticlesController {
             canGenerate: hasProAccess,
             isProUser: hasProAccess,
             audioLanguage: userArticle?.audioLanguage,
+            podcastScript: userArticle?.podcastScript as { script?: string; generatedAt?: string; duration?: string; style?: string; voices?: string; personaId?: string; format?: string; mimeType?: string } | undefined,
         };
     }
 }

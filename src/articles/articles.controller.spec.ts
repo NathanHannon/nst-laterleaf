@@ -25,6 +25,43 @@ describe('ArticlesController provider authorization', () => {
         rawToken: {},
     };
 
+    it('returns saved podcast transcript data in the status payload', async () => {
+        const userArticlesService = {
+            findByUserAndArticle: jest.fn().mockResolvedValue({
+                audioLocation: 'https://cdn.example.com/podcast.mp3',
+                audioStatus: 'completed',
+                podcastScript: {
+                    script: 'Speaker 1: Welcome back.\nSpeaker 2: Let\'s dive in.',
+                },
+            }),
+        } as unknown as UserArticlesService;
+        const usersService = {
+            findByClerkId: jest.fn().mockResolvedValue({
+                id: 'database-user-id',
+                isPro: true,
+            }),
+        } as unknown as UsersService;
+        const controller = new ArticlesController(
+            {} as ArticlesService,
+            userArticlesService,
+            {} as ArticleChunksService,
+            usersService,
+            {} as ContentExtractionService,
+            {} as MetadataScrapingService,
+            {} as ContentModerationService,
+            {} as StorageService,
+            {} as GenAiService,
+            {} as JobQueueService,
+            { get: jest.fn() } as unknown as ConfigService,
+        );
+
+        const result = await controller.getPodcastStatus(nonAdmin, 'article-id');
+
+        expect(result.podcastScript).toEqual({
+            script: 'Speaker 1: Welcome back.\nSpeaker 2: Let\'s dive in.',
+        });
+    });
+
     it('rejects a provider query submitted by a non-admin before generation', async () => {
         const usersService = {
             findByClerkId: jest.fn().mockResolvedValue({
