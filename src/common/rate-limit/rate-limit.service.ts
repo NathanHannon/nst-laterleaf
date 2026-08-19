@@ -24,19 +24,25 @@ export class RateLimitService implements OnModuleInit {
     constructor(private readonly dataSource: DataSource) { }
 
     async onModuleInit(): Promise<void> {
-        // Ensure table exists even if migrations haven't run (e.g. fresh dev DB).
-        // Production should also have the SQL migration in sql/migrations/.
-        await this.dataSource.query(`
-            CREATE TABLE IF NOT EXISTS rate_limits (
-                key        TEXT        PRIMARY KEY,
-                count      INT         NOT NULL DEFAULT 0,
-                reset_at   TIMESTAMPTZ NOT NULL
-            )
-        `);
-        // Keeps the cleanup sweep from seq-scanning the table.
-        await this.dataSource.query(
-            `CREATE INDEX IF NOT EXISTS idx_rate_limits_reset_at ON rate_limits (reset_at)`,
-        );
+        // Convenience bootstrap for fresh dev DBs; sql/migrations/ owns the real schema.
+        // Best-effort: the app user may not own the table (CREATE INDEX needs ownership).
+        try {
+            await this.dataSource.query(`
+                CREATE TABLE IF NOT EXISTS rate_limits (
+                    key        TEXT        PRIMARY KEY,
+                    count      INT         NOT NULL DEFAULT 0,
+                    reset_at   TIMESTAMPTZ NOT NULL
+                )
+            `);
+            // Keeps the cleanup sweep from seq-scanning the table.
+            await this.dataSource.query(
+                `CREATE INDEX IF NOT EXISTS idx_rate_limits_reset_at ON rate_limits (reset_at)`,
+            );
+        } catch (error) {
+            this.logger.warn(
+                `Skipping rate_limits bootstrap DDL: ${error instanceof Error ? error.message : String(error)}`,
+            );
+        }
     }
 
     /**
