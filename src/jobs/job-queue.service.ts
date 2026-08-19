@@ -5,8 +5,11 @@ import { PgBoss } from 'pg-boss';
 import type { GenerationProviderName } from '../genai/providers/generation-provider.interface';
 
 /**
- * (Postgres-backed job queue) for the summary-pro, audio-generation, and
- * article-chunking queues, plus an atomic Postgres-backed rate limiter.
+ * Postgres-backed job queue for the summary-pro, audio-generation, and
+ * article-chunking queues (pg-boss, pgboss schema).
+ *
+ * Rate limiting is handled separately by RateLimitService (public.rate_limits
+ * via TypeORM DataSource) to avoid contending the pg-boss pool (max:3).
  *
  * Uses OnModuleInit/OnModuleDestroy as the Nest equivalent of LB's
  * `@lifeCycleObserver('services')` group. A startPromise guard is kept
@@ -47,7 +50,9 @@ export class JobQueueService implements OnModuleInit, OnModuleDestroy {
             database: process.env.DATABASE_NAME,
             ssl: JobQueueService.buildSslConfig(),
             // Cap pg-boss's internal pool to leave headroom for TypeORM's own pool.
-            max: 3,
+            // Must stay >= the total number of concurrent workers registered in
+            // JobWorkerService, otherwise their polling fetches exhaust the pool.
+            max: 10,
         });
 
         this.boss.on('error', (err: Error) => {
@@ -95,16 +100,6 @@ export class JobQueueService implements OnModuleInit, OnModuleDestroy {
                 expireInSeconds: 300,
             }),
         ]);
-
-        // Create a rate_limits table for atomic, multi-instance-safe fixed-window counters.
-        // Stored alongside pg-boss data; no separate migration needed.
-        await this.boss.getDb().executeSql(`
-      CREATE TABLE IF NOT EXISTS pgboss.rate_limits (
-        key        TEXT        PRIMARY KEY,
-        count      INT         NOT NULL DEFAULT 0,
-        reset_at   TIMESTAMPTZ NOT NULL
-      )
-    `);
 
         this.logger.log('pg-boss started.');
     }
@@ -157,14 +152,6 @@ export class JobQueueService implements OnModuleInit, OnModuleDestroy {
     }
 
     /**
-     * Deletes expired rows from pgboss.rate_limits to prevent unbounded table growth.
-     */
-    async cleanupRateLimits(): Promise<void> {
-        const result = await this.boss.getDb().executeSql(`DELETE FROM pgboss.rate_limits WHERE reset_at < NOW()`);
-        this.logger.log(`Cleaned up ${result.rows.length} expired rate limit rows.`);
-    }
-
-    /**
      * Add a chunking job to the chunking queue
      */
     async addChunkingJob(data: { articleId: string }) {
@@ -206,45 +193,4 @@ export class JobQueueService implements OnModuleInit, OnModuleDestroy {
         return { pro, audio, chunking };
     }
 
-    /**
-     * Atomic fixed-window rate limiter backed by Postgres.
-     * Safe across multiple server instances and server restarts.
-     * Uses a single upsert statement to avoid race conditions.
-     */
-    async checkRateLimit(
-        keyIdentifier: string,
-        action: string,
-        limit: number,
-        windowSeconds: number,
-    ): Promise<{ allowed: boolean; remaining: number; resetIn: number }> {
-        const key = `ratelimit:${action}:${keyIdentifier}`;
-
-        // Single atomic upsert:
-        // - On first hit: insert with count=1 and a fresh window
-        // - If the existing window is still active: increment count
-        // - If the existing window has expired: reset count to 1 with a new window
-        const result = await this.boss.getDb().executeSql(
-            `INSERT INTO pgboss.rate_limits (key, count, reset_at)
-       VALUES ($1, 1, NOW() + ($2 * INTERVAL '1 second'))
-       ON CONFLICT (key) DO UPDATE
-         SET count    = CASE
-                          WHEN pgboss.rate_limits.reset_at <= NOW() THEN 1
-                          ELSE pgboss.rate_limits.count + 1
-                        END,
-             reset_at = CASE
-                          WHEN pgboss.rate_limits.reset_at <= NOW()
-                          THEN NOW() + ($2 * INTERVAL '1 second')
-                          ELSE pgboss.rate_limits.reset_at
-                        END
-       RETURNING count, EXTRACT(EPOCH FROM (reset_at - NOW()))::INT AS reset_in`,
-            [key, windowSeconds],
-        );
-
-        const { count, reset_in } = result.rows[0];
-        return {
-            allowed: count <= limit,
-            remaining: Math.max(0, limit - count),
-            resetIn: reset_in,
-        };
-    }
 }

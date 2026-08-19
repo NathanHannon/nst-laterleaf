@@ -8,6 +8,7 @@ import {
     HttpException,
     HttpStatus,
     InternalServerErrorException,
+    Logger,
     NotFoundException,
     Param,
     Patch,
@@ -38,6 +39,7 @@ import { ContentModerationService } from '../content-moderation/content-moderati
 import { StorageService } from '../storage/storage.service';
 import { GenAiService } from '../genai/gen-ai.service';
 import { JobQueueService } from '../jobs/job-queue.service';
+import { RateLimitService } from '../common/rate-limit/rate-limit.service';
 import { UrlNormalizer } from '../common/url-normalizer';
 import { GEMINI_MODELS, OPENAI_MODELS } from '../genai/constants/ai-models';
 import type { GenerationProviderName } from '../genai/providers/generation-provider.interface';
@@ -69,9 +71,50 @@ const PAYWALL_NOTICE = (url: string) => `
  * pre-fetched HTML optimization used by feed ingestion is intentionally
  * handled in feed-domain services rather than this controller.
  */
+/**
+ * Burst rate limits for LLM-backed endpoints. Monthly remains unlimited
+ * (BASIC_CREDITS_LIMIT = -1) — these prevent scripted abuse.
+ * Uses RateLimitService (public.rate_limits via TypeORM DataSource).
+ */
+const RATE_LIMITS = {
+    // Basic summaries: LLM cost (~$0.0013 each on gemini-3.1-flash-lite) — main abuse vector
+    summaryBasic: [
+        { limit: 5, windowSeconds: 60, label: '5 per minute' },
+        { limit: 30, windowSeconds: 3600, label: '30 per hour' },
+        { limit: 100, windowSeconds: 86400, label: '100 per day' },
+    ],
+    // Pro summaries: paying users get higher burst than basic (still anti-script)
+    summaryPro: [
+        { limit: 10, windowSeconds: 60, label: '10 per minute' },
+        { limit: 60, windowSeconds: 3600, label: '60 per hour' },
+        { limit: 200, windowSeconds: 86400, label: '200 per day' },
+    ],
+    // Imports only create embeddings (gemini-embedding-2 at $0.20/1M tokens, ~$0.0004/article)
+    // Summaries are on-demand via POST :id/summarize, so import limits are just anti-spam for DB/embeddings
+    import: [
+        { limit: 20, windowSeconds: 60, label: '20 per minute' },
+        { limit: 100, windowSeconds: 3600, label: '100 per hour' },
+        { limit: 500, windowSeconds: 86400, label: '500 per day' },
+    ],
+    // TTS narration: billed per character of article content, and `voice`/`speed`
+    // vary the storage cache key, so a script can force fresh synthesis at will.
+    audio: [
+        { limit: 5, windowSeconds: 60, label: '5 per minute' },
+        { limit: 30, windowSeconds: 3600, label: '30 per hour' },
+        { limit: 100, windowSeconds: 86400, label: '100 per day' },
+    ],
+    // Multi-speaker podcasts are the most expensive job we run.
+    podcast: [
+        { limit: 3, windowSeconds: 60, label: '3 per minute' },
+        { limit: 15, windowSeconds: 3600, label: '15 per hour' },
+        { limit: 50, windowSeconds: 86400, label: '50 per day' },
+    ],
+} as const;
+
 @UseGuards(ClerkAuthGuard)
 @Controller('articles')
 export class ArticlesController {
+    private readonly logger = new Logger(ArticlesController.name);
     constructor(
         private readonly articlesService: ArticlesService,
         private readonly userArticlesService: UserArticlesService,
@@ -83,6 +126,7 @@ export class ArticlesController {
         private readonly storageService: StorageService,
         private readonly genAiService: GenAiService,
         private readonly jobQueueService: JobQueueService,
+        private readonly rateLimitService: RateLimitService,
         private readonly configService: ConfigService,
     ) { }
 
@@ -558,6 +602,7 @@ export class ArticlesController {
         const url = UrlNormalizer.normalize(rawUrl);
 
         const { user } = await this.getAuthContext(currentUser);
+        await this.rateLimitService.enforce(user.id, 'import', RATE_LIMITS.import);
         const userId = user.id;
         let hasContent = true;
 
@@ -793,6 +838,7 @@ export class ArticlesController {
         },
     ): Promise<Article> {
         const { user } = await this.getAuthContext(currentUser);
+        await this.rateLimitService.enforce(user.id, 'import', RATE_LIMITS.import);
         const normalizedUrl = UrlNormalizer.normalize(payload.url);
 
         let article = await this.articlesService.findByUrl(normalizedUrl);
@@ -1246,6 +1292,12 @@ export class ArticlesController {
         }
 
         const isGeneratingProSummary = hasProAccess || usePreferPro;
+        // Burst rate limit BEFORE credit check — prevents scripted abuse while keeping monthly unlimited
+        await this.rateLimitService.enforce(
+            user.id,
+            isGeneratingProSummary ? 'summary-pro' : 'summary-basic',
+            isGeneratingProSummary ? RATE_LIMITS.summaryPro : RATE_LIMITS.summaryBasic,
+        );
         await this.checkAndUpdateCredits(user, metadata, isGeneratingProSummary);
 
         try {
@@ -1307,7 +1359,7 @@ export class ArticlesController {
         @Query('voice') voice?: 'Puck' | 'Charon' | 'Kore' | 'Fenrir',
         @Query('speed') speed?: string,
     ): Promise<void> {
-        const { hasProAccess } = await this.getAuthContext(currentUser);
+        const { user, hasProAccess } = await this.getAuthContext(currentUser);
         const parsedSpeed = speed ? parseFloat(speed) : undefined;
 
         if (id.startsWith('url-only-')) {
@@ -1339,6 +1391,9 @@ export class ArticlesController {
             res.redirect(finalAudioUrl);
             return;
         }
+
+        // Cache misses only: synthesis is billed per character, so fail closed.
+        await this.rateLimitService.enforce(user.id, 'audio', RATE_LIMITS.audio, { failOpen: false });
 
         const { audioBuffer, format } = await this.genAiService.generateSpeech(article.content, hasProAccess, {
             voice,
@@ -1392,6 +1447,8 @@ export class ArticlesController {
             throw new NotFoundException('Summary not found or is still being generated.');
         }
 
+        await this.rateLimitService.enforce(user.id, 'audio', RATE_LIMITS.audio, { failOpen: false });
+
         const { audioBuffer, format } = await this.genAiService.generateSummaryAudio(
             id,
             userArticleLink.summary,
@@ -1437,6 +1494,11 @@ export class ArticlesController {
             return { audioUrl: userArticle.audioLocation };
         }
 
+        // An in-flight job has no audioLocation yet, so without this every poll re-enqueues it.
+        if (userArticle?.audioStatus === 'pending' && !forceRegenerate) {
+            return { audioUrl: 'processing' };
+        }
+
         const existingUrl = await this.storageService.checkAudioExists(id, user.id, 'podcast');
         if (existingUrl && !forceRegenerate) {
             if (userArticle) {
@@ -1453,6 +1515,9 @@ export class ArticlesController {
         if (!article?.content) {
             throw new NotFoundException('Article content not found.');
         }
+
+        // `force=true` skips both caches above, so this is the only guard on repeat generation.
+        await this.rateLimitService.enforce(user.id, 'podcast', RATE_LIMITS.podcast, { failOpen: false });
 
         try {
             await this.userArticlesService.updateById(userArticle!.id, {

@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
+import { RateLimitExceededFilter } from './common/rate-limit/rate-limit-exceeded.filter';
 
 async function bootstrap() {
   // `rawBody: true` populates `req.rawBody` (the exact bytes received) on
@@ -13,6 +14,7 @@ async function bootstrap() {
   app.useGlobalPipes(
     new ValidationPipe({ whitelist: true, transform: true }),
   );
+  app.useGlobalFilters(new RateLimitExceededFilter());
   await app.listen(process.env.PORT ?? 3000);
 }
 bootstrap();

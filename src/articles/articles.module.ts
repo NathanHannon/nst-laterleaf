@@ -18,6 +18,7 @@ import { ContentModerationModule } from '../content-moderation/content-moderatio
 import { StorageModule } from '../storage/storage.module';
 import { GenaiModule } from '../genai/genai.module';
 import { JobQueueModule } from '../jobs/job-queue.module';
+import { RateLimitModule } from '../common/rate-limit/rate-limit.module';
 
 @Module({
     imports: [
@@ -28,6 +29,7 @@ import { JobQueueModule } from '../jobs/job-queue.module';
         StorageModule,
         GenaiModule,
         JobQueueModule,
+        RateLimitModule,
     ],
     providers: [ArticlesService, UserArticlesService, ArticleChunksService],
     controllers: [ArticlesController, UserMeArticlesController, ChatController, ArticleTranslationController, ResearchController, AnnotationController],

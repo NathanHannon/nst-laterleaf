@@ -80,9 +80,11 @@ export class JobWorkerService implements OnModuleInit, OnModuleDestroy {
             },
         );
 
+        // Each unit of localConcurrency is a separate polling worker holding a pool
+        // connection per fetch, so throughput comes from batchSize instead.
         await boss.work<ChunkingJobData>(
             'article-chunking',
-            { localConcurrency: 50, pollingIntervalSeconds: 0.5 },
+            { localConcurrency: 2, batchSize: 25, pollingIntervalSeconds: 1 },
             async (jobs: Job<ChunkingJobData>[]) => {
                 for (const job of jobs) await this.processChunkingJob(job.data);
             },
