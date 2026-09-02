@@ -6,6 +6,7 @@ import { UsersService } from '../users/users.service';
 import { ArticlesService } from './articles.service';
 import { GenAiService } from '../genai/gen-ai.service';
 import { RateLimitService } from '../common/rate-limit/rate-limit.service';
+import { GLOBAL_RATE_LIMIT_KEY, GLOBAL_RATE_LIMITS } from '../common/rate-limit/global-rate-limits';
 
 /**
  */
@@ -34,6 +35,7 @@ export class ArticleTranslationController {
             { limit: 5, windowSeconds: 60, label: '5 per minute' },
             { limit: 20, windowSeconds: 3600, label: '20 per hour' },
         ]);
+        await this.rateLimitService.enforce(GLOBAL_RATE_LIMIT_KEY, 'translate', GLOBAL_RATE_LIMITS.translate);
         const article = await this.articlesService.findById(id);
         if (!article) {
             throw new NotFoundException('Article not found');

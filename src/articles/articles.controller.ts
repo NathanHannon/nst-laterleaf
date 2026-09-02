@@ -40,6 +40,7 @@ import { StorageService } from '../storage/storage.service';
 import { GenAiService } from '../genai/gen-ai.service';
 import { JobQueueService } from '../jobs/job-queue.service';
 import { RateLimitService } from '../common/rate-limit/rate-limit.service';
+import { GLOBAL_RATE_LIMIT_KEY, GLOBAL_RATE_LIMITS } from '../common/rate-limit/global-rate-limits';
 import { UrlNormalizer } from '../common/url-normalizer';
 import { GEMINI_MODELS, OPENAI_MODELS } from '../genai/constants/ai-models';
 import type { GenerationProviderName } from '../genai/providers/generation-provider.interface';
@@ -603,6 +604,7 @@ export class ArticlesController {
 
         const { user } = await this.getAuthContext(currentUser);
         await this.rateLimitService.enforce(user.id, 'import', RATE_LIMITS.import);
+        await this.rateLimitService.enforce(GLOBAL_RATE_LIMIT_KEY, 'import', GLOBAL_RATE_LIMITS.import);
         const userId = user.id;
         let hasContent = true;
 
@@ -839,6 +841,7 @@ export class ArticlesController {
     ): Promise<Article> {
         const { user } = await this.getAuthContext(currentUser);
         await this.rateLimitService.enforce(user.id, 'import', RATE_LIMITS.import);
+        await this.rateLimitService.enforce(GLOBAL_RATE_LIMIT_KEY, 'import', GLOBAL_RATE_LIMITS.import);
         const normalizedUrl = UrlNormalizer.normalize(payload.url);
 
         let article = await this.articlesService.findByUrl(normalizedUrl);
@@ -1298,6 +1301,7 @@ export class ArticlesController {
             isGeneratingProSummary ? 'summary-pro' : 'summary-basic',
             isGeneratingProSummary ? RATE_LIMITS.summaryPro : RATE_LIMITS.summaryBasic,
         );
+        await this.rateLimitService.enforce(GLOBAL_RATE_LIMIT_KEY, 'summary', GLOBAL_RATE_LIMITS.summary);
         await this.checkAndUpdateCredits(user, metadata, isGeneratingProSummary);
 
         try {
@@ -1394,6 +1398,7 @@ export class ArticlesController {
 
         // Cache misses only: synthesis is billed per character, so fail closed.
         await this.rateLimitService.enforce(user.id, 'audio', RATE_LIMITS.audio, { failOpen: false });
+        await this.rateLimitService.enforce(GLOBAL_RATE_LIMIT_KEY, 'audio', GLOBAL_RATE_LIMITS.audio, { failOpen: false });
 
         const { audioBuffer, format } = await this.genAiService.generateSpeech(article.content, hasProAccess, {
             voice,
@@ -1448,6 +1453,7 @@ export class ArticlesController {
         }
 
         await this.rateLimitService.enforce(user.id, 'audio', RATE_LIMITS.audio, { failOpen: false });
+        await this.rateLimitService.enforce(GLOBAL_RATE_LIMIT_KEY, 'audio', GLOBAL_RATE_LIMITS.audio, { failOpen: false });
 
         const { audioBuffer, format } = await this.genAiService.generateSummaryAudio(
             id,
@@ -1518,6 +1524,7 @@ export class ArticlesController {
 
         // `force=true` skips both caches above, so this is the only guard on repeat generation.
         await this.rateLimitService.enforce(user.id, 'podcast', RATE_LIMITS.podcast, { failOpen: false });
+        await this.rateLimitService.enforce(GLOBAL_RATE_LIMIT_KEY, 'podcast', GLOBAL_RATE_LIMITS.podcast, { failOpen: false });
 
         try {
             await this.userArticlesService.updateById(userArticle!.id, {

@@ -20,6 +20,7 @@ import { UserArticlesService } from './user-articles.service';
 import { ArticleChunksService } from './article-chunks.service';
 import { GenAiService } from '../genai/gen-ai.service';
 import { RateLimitService } from '../common/rate-limit/rate-limit.service';
+import { GLOBAL_RATE_LIMIT_KEY, GLOBAL_RATE_LIMITS } from '../common/rate-limit/global-rate-limits';
 import type { ChatMessage } from './entities/user-article.entity';
 
 /**
@@ -87,6 +88,7 @@ export class ChatController {
             { limit: 10, windowSeconds: 60, label: '10 per minute' },
             { limit: 50, windowSeconds: 3600, label: '50 per hour' },
         ]);
+        await this.rateLimitService.enforce(GLOBAL_RATE_LIMIT_KEY, 'chat', GLOBAL_RATE_LIMITS.chat);
 
         const userArticleLink = await this.userArticlesService.findByUserAndArticle(user.id, id);
         if (!userArticleLink || !userArticleLink.articleId) {
