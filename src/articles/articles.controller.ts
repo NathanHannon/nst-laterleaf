@@ -237,7 +237,8 @@ export class ArticlesController {
         metadata: { tier: 'pro' | 'free' },
         isProSummary: boolean,
     ): Promise<void> {
-        const BASIC_CREDITS_LIMIT = -1; // Unlimited basic summaries per month
+        const rawBasicLimit = this.configService.get<number>('BASIC_CREDITS_LIMIT');
+        const BASIC_CREDITS_LIMIT = rawBasicLimit ?? 50;
         const PRO_CREDITS_LIMIT = 5; // Free users get 5 pro summaries per month as a taste
 
         const userTier = metadata.tier || 'free';
