@@ -239,7 +239,8 @@ export class ArticlesController {
     ): Promise<void> {
         const rawBasicLimit = this.configService.get<number>('BASIC_CREDITS_LIMIT');
         const BASIC_CREDITS_LIMIT = rawBasicLimit ?? 50;
-        const PRO_CREDITS_LIMIT = 5; // Free users get 5 pro summaries per month as a taste
+        const rawProLimit = this.configService.get<number>('PRO_CREDITS_LIMIT');
+        const PRO_CREDITS_LIMIT = rawProLimit ?? 5; // Free users get 5 pro summaries per month as a taste
 
         const userTier = metadata.tier || 'free';
 
