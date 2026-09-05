@@ -20,8 +20,8 @@ import { UpdateUserDto } from './dto/update-user.dto';
 import { FindOptionsWhere } from 'typeorm';
 import { User } from './entities/user.entity';
 
-const BASIC_CREDITS_LIMIT = -1; // Basic summaries are unlimited
-const PRO_CREDITS_LIMIT = 5;
+const DEFAULT_BASIC_CREDITS_LIMIT = 50;
+const DEFAULT_PRO_CREDITS_LIMIT = 5;
 
 /**
  */
@@ -58,6 +58,8 @@ export class UsersController {
         const hasProAccess =
             user.isPro || currentUser.publicMetadata?.role === 'admin';
         const tier = hasProAccess ? 'pro' : 'free';
+        const basicCreditsLimit = this.configService.get<number>('BASIC_CREDITS_LIMIT') ?? DEFAULT_BASIC_CREDITS_LIMIT;
+        const proCreditsLimit = this.configService.get<number>('PRO_CREDITS_LIMIT') ?? DEFAULT_PRO_CREDITS_LIMIT;
 
         const now = new Date();
         const resetDate = new Date(user.creditsResetAt);
@@ -68,13 +70,15 @@ export class UsersController {
 
         const credits = {
             basicCreditsUsed: needsReset ? 0 : user.basicCreditsUsed,
-            basicCreditsLimit: BASIC_CREDITS_LIMIT,
-            basicCreditsRemaining: BASIC_CREDITS_LIMIT,
+            basicCreditsLimit,
+            basicCreditsRemaining: basicCreditsLimit === -1
+                ? -1
+                : Math.max(0, basicCreditsLimit - (needsReset ? 0 : user.basicCreditsUsed)),
             proCreditsUsed: needsReset ? 0 : user.proCreditsUsed,
-            proCreditsLimit: PRO_CREDITS_LIMIT,
+            proCreditsLimit,
             proCreditsRemaining: needsReset
-                ? PRO_CREDITS_LIMIT
-                : Math.max(0, PRO_CREDITS_LIMIT - user.proCreditsUsed),
+                ? proCreditsLimit
+                : Math.max(0, proCreditsLimit - user.proCreditsUsed),
             resetAt: user.creditsResetAt,
             daysUntilReset: Math.max(0, 30 - daysSinceReset),
             needsReset,

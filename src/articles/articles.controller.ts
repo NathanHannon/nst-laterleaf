@@ -278,6 +278,45 @@ export class ArticlesController {
         await this.usersService.save(user);
     }
 
+    private getSummarySoftCapWarning(
+        user: User,
+        metadata: { tier: 'pro' | 'free' },
+        isProSummary: boolean,
+    ): { enabled: boolean; limit: number; remaining: number; threshold: number } | null {
+        const rawBasicLimit = this.configService.get<number>('BASIC_CREDITS_LIMIT');
+        const basicLimit = rawBasicLimit ?? 50;
+        const rawProLimit = this.configService.get<number>('PRO_CREDITS_LIMIT');
+        const proLimit = rawProLimit ?? 5;
+        const userTier = metadata.tier || 'free';
+
+        if (userTier === 'pro') {
+            return null;
+        }
+
+        if (isProSummary) {
+            const used = user.proCreditsUsed;
+            const remaining = Math.max(0, proLimit - used);
+            const threshold = Math.max(0, proLimit - 1);
+
+            return remaining <= 1
+                ? { enabled: true, limit: proLimit, remaining, threshold }
+                : null;
+        }
+
+        const used = user.basicCreditsUsed;
+        const remaining = basicLimit === -1 ? Number.POSITIVE_INFINITY : Math.max(0, basicLimit - used);
+        const threshold = basicLimit === -1 ? Number.POSITIVE_INFINITY : Math.max(0, basicLimit - 5);
+
+        return basicLimit !== -1 && used >= threshold
+            ? {
+                enabled: true,
+                limit: basicLimit,
+                remaining,
+                threshold,
+            }
+            : null;
+    }
+
     /**
      * Offloads chunking + embedding of an article's content to the
      * background queue (article-chunking). Mirrors
@@ -1262,6 +1301,12 @@ export class ArticlesController {
         status: 'completed' | 'pending';
         fallbackUsed?: boolean;
         queuedForRetry?: boolean;
+        softCapWarning?: {
+            enabled: boolean;
+            limit: number;
+            remaining: number;
+            threshold: number;
+        } | null;
     }> {
         const { user, hasProAccess, metadata } = await this.getAuthContext(currentUser);
         const providerOverride = this.resolveAdminProviderOverride(currentUser, provider);
@@ -1286,6 +1331,7 @@ export class ArticlesController {
 
         const currentLanguage = userArticleLink.summaryLanguage || 'en';
         const isLanguageMismatch = !!language && language.toLowerCase() !== currentLanguage.toLowerCase();
+        const isGeneratingProSummary = hasProAccess || usePreferPro;
 
         if (
             userArticleLink.summary &&
@@ -1293,10 +1339,13 @@ export class ArticlesController {
             !isLanguageMismatch &&
             userArticleLink.summaryStatus !== 'pending'
         ) {
-            return { summary: userArticleLink.summary, status: 'completed' };
+            return {
+                summary: userArticleLink.summary,
+                status: 'completed',
+                softCapWarning: this.getSummarySoftCapWarning(user, metadata, isGeneratingProSummary),
+            };
         }
 
-        const isGeneratingProSummary = hasProAccess || usePreferPro;
         // Burst rate limit BEFORE credit check — prevents scripted abuse while keeping monthly unlimited
         await this.rateLimitService.enforce(
             user.id,
@@ -1305,6 +1354,7 @@ export class ArticlesController {
         );
         await this.rateLimitService.enforce(GLOBAL_RATE_LIMIT_KEY, 'summary', GLOBAL_RATE_LIMITS.summary);
         await this.checkAndUpdateCredits(user, metadata, isGeneratingProSummary);
+        const softCapWarning = this.getSummarySoftCapWarning(user, metadata, isGeneratingProSummary);
 
         try {
             await this.userArticlesService.updateById(userArticleLink.id, { summaryStatus: 'pending' });
@@ -1326,7 +1376,10 @@ export class ArticlesController {
                 });
             }
 
-            return result;
+            return {
+                ...result,
+                softCapWarning,
+            };
         } catch (error) {
             try {
                 await this.userArticlesService.updateById(userArticleLink.id, { summaryStatus: 'failed' });
