@@ -131,8 +131,9 @@ export class ArticlesController {
         private readonly configService: ConfigService,
     ) { }
 
-    private resolveAdminProviderOverride(
+    private resolveProviderPreference(
         currentUser: ClerkUserProfile,
+        hasProAccess: boolean,
         provider?: string,
     ): GenerationProviderName | undefined {
         if (!provider) return undefined;
@@ -145,8 +146,8 @@ export class ArticlesController {
             ?.split(',')
             .map((id) => id.trim());
         const isAdmin = adminClerkIds?.includes(currentUser.clerkId) || currentUser.publicMetadata?.role === 'admin';
-        if (!isAdmin) {
-            throw new ForbiddenException('Provider override is restricted to admins');
+        if (!isAdmin && !hasProAccess) {
+            throw new ForbiddenException('Provider preference is restricted to Pro users');
         }
         return provider;
     }
@@ -1309,7 +1310,7 @@ export class ArticlesController {
         } | null;
     }> {
         const { user, hasProAccess, metadata } = await this.getAuthContext(currentUser);
-        const providerOverride = this.resolveAdminProviderOverride(currentUser, provider);
+        const providerOverride = this.resolveProviderPreference(currentUser, hasProAccess, provider);
         const forceRegenerate = force === 'true';
         const usePreferPro = usePro === 'true';
 

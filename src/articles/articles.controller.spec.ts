@@ -62,7 +62,7 @@ describe('ArticlesController provider authorization', () => {
         });
     });
 
-    it('rejects a provider query submitted by a non-admin before generation', async () => {
+    it('rejects a provider query submitted by a free non-admin before generation', async () => {
         const usersService = {
             findByClerkId: jest.fn().mockResolvedValue({
                 id: 'database-user-id',
@@ -104,6 +104,45 @@ describe('ArticlesController provider authorization', () => {
             'openai-compatible',
         )).rejects.toBeInstanceOf(ForbiddenException);
         expect(genAiService.generateSummary).not.toHaveBeenCalled();
+    });
+
+    it('allows a Pro non-admin to choose a provider for a summary', async () => {
+        const user = {
+            id: 'database-user-id',
+            clerkId: 'user_123',
+            isPro: true,
+            basicCreditsUsed: 0,
+            proCreditsUsed: 0,
+            creditsResetAt: new Date(),
+        };
+        const usersService = {
+            findByClerkId: jest.fn().mockResolvedValue(user),
+            save: jest.fn().mockImplementation(async (savedUser) => savedUser),
+        } as unknown as UsersService;
+        const userArticlesService = {
+            findByUserAndArticle: jest.fn().mockResolvedValue({
+                id: 'user-article-id', articleId: 'article-id', summaryStatus: 'idle', summaryLanguage: 'en', hasContent: true,
+            }),
+            updateById: jest.fn().mockResolvedValue(undefined),
+        } as unknown as UserArticlesService;
+        const articlesService = {
+            findById: jest.fn().mockResolvedValue({ id: 'article-id', content: 'Article content' }),
+        } as unknown as ArticlesService;
+        const jobQueueService = {
+            addSummaryJob: jest.fn().mockResolvedValue(undefined),
+        } as unknown as JobQueueService;
+        const controller = new ArticlesController(
+            articlesService, userArticlesService, {} as ArticleChunksService, usersService,
+            {} as ContentExtractionService, {} as MetadataScrapingService, {} as ContentModerationService,
+            {} as StorageService, {} as GenAiService, jobQueueService,
+            { enforce: jest.fn().mockResolvedValue(undefined) } as any,
+            { get: jest.fn().mockReturnValue('admin_456') } as unknown as ConfigService,
+        );
+
+        const result = await controller.summarizeArticle(nonAdmin, 'article-id', undefined, undefined, 'en', 'openai-compatible');
+
+        expect(result).toMatchObject({ status: 'pending', model: 'gpt-5.4-mini' });
+        expect(jobQueueService.addSummaryJob).toHaveBeenCalledWith(expect.objectContaining({ isPro: true, provider: 'openai-compatible' }));
     });
 
     it('returns a soft-cap warning when a free user is nearing their monthly summary limit', async () => {
