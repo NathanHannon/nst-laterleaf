@@ -5,8 +5,8 @@ describe('estimateTextGenerationCost', () => {
         expect(estimateTextGenerationCost('gemini-3-flash-preview', 1_000_000, 1_000_000)).toBe(3.5);
     });
 
-    it('estimates GPT-5.6 Luna cost from actual token counts', () => {
-        expect(estimateTextGenerationCost('gpt-5.6-luna', 1_000_000, 1_000_000)).toBe(1.4);
+    it('estimates GPT-6 Luna cost from actual token counts', () => {
+        expect(estimateTextGenerationCost('gpt-6-luna', 1_000_000, 1_000_000)).toBe(0.6);
     });
 
     it('returns an OpenAI input/output cost breakdown', () => {

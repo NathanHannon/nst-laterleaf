@@ -46,7 +46,7 @@ To use an OpenAI-compatible `chat/completions` API for text and chat:
 GENERATION_PROVIDER=openai-compatible
 OPENAI_COMPATIBLE_API_KEY=your-key
 OPENAI_COMPATIBLE_BASE_URL=https://api.openai.com/v1
-OPENAI_COMPATIBLE_TEXT_MODEL=gpt-5.6-luna
+OPENAI_COMPATIBLE_TEXT_MODEL=gpt-6-luna
 OPENAI_COMPATIBLE_PRO_MODEL=gpt-5.4-mini
 OPENAI_COMPATIBLE_PODCAST_MODEL=gpt-5.4-mini
 ```

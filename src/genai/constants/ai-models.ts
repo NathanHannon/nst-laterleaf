@@ -12,6 +12,6 @@ export const GEMINI_MODELS = {
 
 export const OPENAI_MODELS = {
     PRO_TEXT: 'gpt-5.4-mini',
-    FREE_TEXT: 'gpt-5.6-luna',
+    FREE_TEXT: 'gpt-6-luna',
     PODCAST: 'gpt-5.4-mini',
 } as const;
