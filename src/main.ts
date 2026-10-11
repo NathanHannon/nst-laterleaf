@@ -1,5 +1,5 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { ValidationPipe, VersioningType } from '@nestjs/common';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
 import { RateLimitExceededFilter } from './common/rate-limit/rate-limit-exceeded.filter';
@@ -14,6 +14,7 @@ async function bootstrap() {
   app.useBodyParser('urlencoded', { limit: '5mb', extended: true });
   // Mirrors lb-laterleaf's `rest.basePath: '/api'` config.
   app.setGlobalPrefix('api');
+  app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
   app.enableCors();
   app.useGlobalPipes(
     new ValidationPipe({ whitelist: true, transform: true }),
