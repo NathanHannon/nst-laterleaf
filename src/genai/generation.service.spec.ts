@@ -28,17 +28,17 @@ describe('GenerationService', () => {
         }
     });
 
-    it('uses Gemini by default', async () => {
+    it('uses the OpenAI-compatible adapter by default', async () => {
         delete process.env.GENERATION_PROVIDER;
-        jest.mocked(gemini.generateText).mockResolvedValue({ text: 'Gemini response', model: 'gemini-test' });
+        jest.mocked(openAiCompatible.generateText).mockResolvedValue({ text: 'OpenAI response', model: 'openai-test' });
 
         await expect(service.generateText(request)).resolves.toEqual({
-            text: 'Gemini response',
-            model: 'gemini-test',
+            text: 'OpenAI response',
+            model: 'openai-test',
             estimatedCostUsd: undefined,
         });
-        expect(gemini.generateText).toHaveBeenCalledWith(request);
-        expect(openAiCompatible.generateText).not.toHaveBeenCalled();
+        expect(openAiCompatible.generateText).toHaveBeenCalledWith(request);
+        expect(gemini.generateText).not.toHaveBeenCalled();
     });
 
     it.each(['openai', 'openai-compatible'])('uses the OpenAI-compatible adapter for %s', async (provider) => {

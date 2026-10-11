@@ -20,7 +20,7 @@ export class GenerationService {
     ) { }
 
     private get provider(): GenerationProvider {
-        const provider = (process.env.GENERATION_PROVIDER || 'gemini').toLowerCase();
+        const provider = (process.env.GENERATION_PROVIDER || 'openai-compatible').toLowerCase();
         if (provider === 'gemini') return this.gemini;
         if (provider === 'openai' || provider === 'openai-compatible') return this.openAiCompatible;
         throw new Error(`Unsupported generation provider: ${provider}`);
