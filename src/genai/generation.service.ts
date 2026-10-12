@@ -11,6 +11,7 @@ import type {
 } from './providers/generation-provider.interface';
 import { OpenAiCompatibleGenerationAdapter } from './providers/openai-compatible-generation.adapter';
 import { estimateTextGenerationCost } from './constants/ai-pricing';
+import { normalizeAiProviderError } from './ai-provider-error';
 
 @Injectable()
 export class GenerationService {
@@ -20,7 +21,7 @@ export class GenerationService {
     ) { }
 
     private get provider(): GenerationProvider {
-        const provider = (process.env.GENERATION_PROVIDER || 'openai-compatible').toLowerCase();
+        const provider = (process.env.GENERATION_PROVIDER || 'gemini').toLowerCase();
         if (provider === 'gemini') return this.gemini;
         if (provider === 'openai' || provider === 'openai-compatible') return this.openAiCompatible;
         throw new Error(`Unsupported generation provider: ${provider}`);
@@ -34,7 +35,12 @@ export class GenerationService {
         provider: GenerationProvider,
         request: TextGenerationRequest,
     ): Promise<TextGenerationResult> {
-        const result = await provider.generateText(request);
+        let result: TextGenerationResult;
+        try {
+            result = await provider.generateText(request);
+        } catch (error) {
+            throw normalizeAiProviderError(error);
+        }
         return {
             ...result,
             estimatedCostUsd: estimateTextGenerationCost(
@@ -57,10 +63,16 @@ export class GenerationService {
     }
 
     generateEmbeddings(request: EmbeddingRequest): Promise<number[]> {
-        return this.gemini.generateEmbeddings(request);
+        return this.gemini.generateEmbeddings(request).catch((error: unknown) => {
+            throw normalizeAiProviderError(error);
+        });
     }
 
-    generateChatReply(request: ChatGenerationRequest): Promise<ChatGenerationResult> {
-        return this.provider.generateChatReply(request);
+    async generateChatReply(request: ChatGenerationRequest): Promise<ChatGenerationResult> {
+        try {
+            return await this.provider.generateChatReply(request);
+        } catch (error) {
+            throw normalizeAiProviderError(error);
+        }
     }
 }

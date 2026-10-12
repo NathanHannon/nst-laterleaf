@@ -1,4 +1,9 @@
+import { HttpException } from '@nestjs/common';
 import { GenerationService } from './generation.service';
+import {
+    AI_PROVIDER_CREDITS_EXHAUSTED,
+    AI_PROVIDER_CREDITS_EXHAUSTED_MESSAGE,
+} from './ai-provider-error';
 import type { GeminiGenerationAdapter } from './providers/gemini-generation.adapter';
 import type { OpenAiCompatibleGenerationAdapter } from './providers/openai-compatible-generation.adapter';
 
@@ -28,17 +33,17 @@ describe('GenerationService', () => {
         }
     });
 
-    it('uses the OpenAI-compatible adapter by default', async () => {
+    it('uses Gemini by default', async () => {
         delete process.env.GENERATION_PROVIDER;
-        jest.mocked(openAiCompatible.generateText).mockResolvedValue({ text: 'OpenAI response', model: 'openai-test' });
+        jest.mocked(gemini.generateText).mockResolvedValue({ text: 'Gemini response', model: 'gemini-test' });
 
         await expect(service.generateText(request)).resolves.toEqual({
-            text: 'OpenAI response',
-            model: 'openai-test',
+            text: 'Gemini response',
+            model: 'gemini-test',
             estimatedCostUsd: undefined,
         });
-        expect(openAiCompatible.generateText).toHaveBeenCalledWith(request);
-        expect(gemini.generateText).not.toHaveBeenCalled();
+        expect(gemini.generateText).toHaveBeenCalledWith(request);
+        expect(openAiCompatible.generateText).not.toHaveBeenCalled();
     });
 
     it.each(['openai', 'openai-compatible'])('uses the OpenAI-compatible adapter for %s', async (provider) => {
@@ -52,6 +57,38 @@ describe('GenerationService', () => {
         });
         expect(openAiCompatible.generateText).toHaveBeenCalledWith(request);
         expect(gemini.generateText).not.toHaveBeenCalled();
+    });
+
+    it('returns a stable 402 error when a provider reports exhausted credits', async () => {
+        process.env.GENERATION_PROVIDER = 'openai-compatible';
+        jest.mocked(openAiCompatible.generateText).mockRejectedValue({
+            status: 429,
+            code: 'insufficient_quota',
+            message: 'You exceeded your current quota. Check your plan and billing details.',
+        });
+
+        try {
+            await service.generateText(request);
+            fail('Expected generation to reject');
+        } catch (error) {
+            expect(error).toBeInstanceOf(HttpException);
+            expect((error as HttpException).getStatus()).toBe(402);
+            expect((error as HttpException).getResponse()).toEqual({
+                statusCode: 402,
+                error: {
+                    code: AI_PROVIDER_CREDITS_EXHAUSTED,
+                    message: AI_PROVIDER_CREDITS_EXHAUSTED_MESSAGE,
+                },
+            });
+        }
+    });
+
+    it('preserves ordinary provider rate-limit errors', async () => {
+        process.env.GENERATION_PROVIDER = 'openai-compatible';
+        const rateLimitError = { status: 429, code: 'rate_limit_exceeded', message: 'Too many requests' };
+        jest.mocked(openAiCompatible.generateText).mockRejectedValue(rateLimitError);
+
+        await expect(service.generateText(request)).rejects.toBe(rateLimitError);
     });
 
     it('rejects unknown providers', () => {
@@ -73,7 +110,7 @@ describe('GenerationService', () => {
         expect(process.env.GENERATION_PROVIDER).toBe('gemini');
     });
 
-    it('always uses Gemini embeddings when text defaults to OpenAI-compatible', async () => {
+    it('always uses Gemini embeddings when text uses OpenAI-compatible', async () => {
         process.env.GENERATION_PROVIDER = 'openai-compatible';
         const embeddingRequest = {
             content: 'Article content',
