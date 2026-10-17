@@ -1285,15 +1285,15 @@ export class ArticlesController {
 
     /**
      * Generates (or returns the cached) AI summary for an article, handling
-     * credit checks, Pro-vs-Free model choice, exponential-backoff retries,
-     * and Pro-summary queuing. Mirrors `ArticleController.summarizeArticle`.
+        * credit checks, retries, and background queuing for Pro accounts. Summary
+        * content and model are shared across subscription tiers.
      */
     @Post(':id/summarize')
     async summarizeArticle(
         @CurrentUser() currentUser: ClerkUserProfile,
         @Param('id') id: string,
         @Query('force') force?: string,
-        @Query('usePro') usePro?: string,
+        @Query('usePro') _usePro?: string,
         @Query('language') language?: string,
         @Query('provider') provider?: string,
     ): Promise<{
@@ -1312,7 +1312,6 @@ export class ArticlesController {
         const { user, hasProAccess, metadata } = await this.getAuthContext(currentUser);
         const providerOverride = this.resolveProviderPreference(currentUser, hasProAccess, provider);
         const forceRegenerate = force === 'true';
-        const usePreferPro = usePro === 'true';
 
         if (id.startsWith('url-only-')) {
             throw new BadRequestException(
@@ -1332,7 +1331,7 @@ export class ArticlesController {
 
         const currentLanguage = userArticleLink.summaryLanguage || 'en';
         const isLanguageMismatch = !!language && language.toLowerCase() !== currentLanguage.toLowerCase();
-        const isGeneratingProSummary = hasProAccess || usePreferPro;
+        const isGeneratingProSummary = hasProAccess;
 
         if (
             userArticleLink.summary &&
@@ -1347,7 +1346,7 @@ export class ArticlesController {
             };
         }
 
-        // Burst rate limit BEFORE credit check — prevents scripted abuse while keeping monthly unlimited
+        // Apply burst limits before monthly credit checks to reject abusive traffic early.
         await this.rateLimitService.enforce(
             user.id,
             isGeneratingProSummary ? 'summary-pro' : 'summary-basic',

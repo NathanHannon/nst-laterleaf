@@ -186,9 +186,9 @@ describe('LLM burst rate limits (no bill)', () => {
     describe('POST :id/summarize — basic (free) summaries', () => {
         it('allows within 5/min, 30/hr, 100/day and calls LLM', async () => {
             const { controller, rateLimitService, genAi } = makeArticlesController();
-            const result = await controller.summarizeArticle(clerkUser, article.id, 'true', undefined, 'en');
+            const result = await controller.summarizeArticle(clerkUser, article.id, 'true', 'true', 'en');
             expect(result.status).toBe('completed');
-            expect(rateLimitService.checkRateLimit).toHaveBeenCalledTimes(3);
+            expect(rateLimitService.checkRateLimit).toHaveBeenCalledTimes(4);
             expect(rateLimitService.checkRateLimit).toHaveBeenNthCalledWith(1, dbUser.id, 'summary-basic:60s', 5, 60);
             expect(rateLimitService.checkRateLimit).toHaveBeenNthCalledWith(2, dbUser.id, 'summary-basic:3600s', 30, 3600);
             expect(rateLimitService.checkRateLimit).toHaveBeenNthCalledWith(3, dbUser.id, 'summary-basic:86400s', 100, 86400);

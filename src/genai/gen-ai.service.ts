@@ -330,8 +330,8 @@ export class GenAiService {
     ) {
         const language = this.getLanguageName(languageCodeOrName);
 
-        // Truncate very long articles to control input costs
-        const maxInputTokens = isProUser ? 16000 : 4000; // Much higher limit for pro users
+        // Keep summary coverage consistent across subscription tiers.
+        const maxInputTokens = 16000;
         const maxInputWords = maxInputTokens * 4;
 
         let processedContent = content;
@@ -345,50 +345,35 @@ export class GenAiService {
         const targetOutputTokens = Math.ceil(contentTokens / 10); // 10:1 ratio
         const targetOutputWords = targetOutputTokens * 4; // Convert back to words for prompt
 
-        // Set reasonable bounds for output size - much more generous for pro
-        const minWords = isProUser ? 200 : 50; // Higher minimum for pro
-        const maxWords = isProUser ? 800 : 150; // Much higher max for pro
+        const minWords = 50;
+        const maxWords = 300;
         const optimalWords = Math.max(minWords, Math.min(maxWords, targetOutputWords));
 
         console.log(`📏 Input sizing - Content tokens: ${contentTokens}, Target output: ${targetOutputTokens} tokens (${optimalWords} words)`);
 
-        const prompt = isProUser
-            ? `Provide a concise, structured analysis of this article in exactly ${optimalWords} words.
+        const prompt = `Create a concise, evidence-grounded reading brief for this article in ${language}. Aim for about ${optimalWords} words, adjusting to the article's length and substance.
 
-      IMPORTANT: The output MUST be in ${language}.
-      Translate the section headers (e.g. "Main Theme", "Key Points") into ${language} as well.
+    Write a 1-2 sentence opening that states the author's central argument and how it is supported, not just the topic.
 
-      ${processedContent}
+    ## Key claims
+    Number 3-5 of the article's most important claims in source order. Give each a short label and explain it briefly, preserving the author's reasoning. Do not add claims that the article does not support.
 
-      Format:
+    ## Keep in mind
+    Include up to 3 important caveats, limitations, counterarguments, or uncertainties raised by the article. Omit this section if the article raises none.
 
-      ## Main Theme
-      [1-2 sentences: core topic and argument in ${language}]
+    ## Reading map
+    When the article has clear headings or sections, list 3-6 of them in source order with a short phrase describing each. Omit this section if the source has no meaningful structure. Never invent headings, page numbers, or citations.
 
-      ## Key Points
-      [3-4 bullet points: most important arguments in ${language}]
+    Write headings and prose in ${language}. Keep direct quotations in the article's original language. Be neutral, distinguish the author's claims from established facts, and do not infer beyond the provided text.
 
-      ## Evidence
-      [1-2 sentences: data, studies, or examples mentioned in ${language}]
-
-      ## Significance
-      [1-2 sentences: why this matters in ${language}]
-
-      ## Notable Quote
-      [1 key quote that captures the essence, with proper attribution. Keep the quote in its ORIGINAL language, but translate any commentary.]
-
-      Keep the total response to approximately ${optimalWords} words.`
-            : `Summarize this article in exactly ${optimalWords} words in ${language}, focusing on the main points:
-
-      ${processedContent}
-
-      Be factual and neutral. Use exactly ${optimalWords} words - no more, no less. Answer in ${language}.`;
+    ARTICLE:
+    ${processedContent}`;
 
         // Calculate token usage
         const inputTokens = this.estimateTokens(prompt);
 
         const request = {
-            model: isProUser ? 'pro' as const : 'free' as const,
+            model: 'free' as const,
             prompt,
         };
         const result = await this.withRetry(

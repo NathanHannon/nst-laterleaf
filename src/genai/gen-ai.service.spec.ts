@@ -3,11 +3,11 @@ import type { GenerationService } from './generation.service';
 import type { AudioProcessingService } from './audio-processing.service';
 
 describe('GenAiService', () => {
-    it('logs the actual OpenAI model and pricing for an overridden summary', async () => {
+    it('uses the shared summary prompt and model for all subscription tiers', async () => {
         const generationService = {
             generateTextWithProvider: jest.fn().mockResolvedValue({
                 text: 'OpenAI summary',
-                model: 'gpt-5.4-mini',
+                model: 'gpt-6-luna',
                 inputTokens: 1_000,
                 outputTokens: 1_000,
             }),
@@ -15,15 +15,22 @@ describe('GenAiService', () => {
         const service = new GenAiService({} as AudioProcessingService, generationService);
         const logSpy = jest.spyOn(console, 'log').mockImplementation(() => undefined);
 
+        await expect(service.generateSummary('Article content', false, undefined, 'en', 'openai-compatible'))
+            .resolves.toBe('OpenAI summary');
         await expect(service.generateSummary('Article content', true, undefined, 'en', 'openai-compatible'))
             .resolves.toBe('OpenAI summary');
 
         expect(generationService.generateTextWithProvider).toHaveBeenCalledWith(
             'openai-compatible',
-            expect.objectContaining({ model: 'pro' }),
+            expect.objectContaining({ model: 'free' }),
         );
-        expect(logSpy).toHaveBeenCalledWith('Model: gpt-5.4-mini');
-        expect(logSpy).toHaveBeenCalledWith('💰 Total cost: $0.005250');
+        const firstRequest = generationService.generateTextWithProvider.mock.calls[0][1];
+        const secondRequest = generationService.generateTextWithProvider.mock.calls[1][1];
+        expect(secondRequest).toEqual(firstRequest);
+        expect(firstRequest.prompt).toContain('## Key claims');
+        expect(firstRequest.prompt).toContain('## Keep in mind');
+        expect(firstRequest.prompt).toContain('## Reading map');
+        expect(logSpy).toHaveBeenCalledWith('Model: gpt-6-luna');
 
         logSpy.mockRestore();
     });
