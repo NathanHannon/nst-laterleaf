@@ -228,7 +228,7 @@ export class RssController {
             const title = originalArticle.title || 'Untitled Article';
             const description = ua.summary || originalArticle.excerpt || 'An AI-generated discussion about this saved article.';
             const pubDate = new Date(ua.updatedAt || new Date()).toUTCString();
-            const resolvedAudioUrl = this.buildPodcastAudioUrl(user.id, originalArticle.id, ua.audioLocation);
+            const resolvedAudioUrl = this.buildPodcastAudioUrl(user.id, originalArticle.id, ua.audioLocation || undefined);
             const encodedAudioUrl = escapeXml(resolvedAudioUrl);
 
             // Default to 15MB if file size is not known

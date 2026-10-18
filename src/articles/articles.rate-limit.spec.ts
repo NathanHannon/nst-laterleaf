@@ -184,6 +184,54 @@ describe('LLM burst rate limits (no bill)', () => {
     }
 
     describe('POST :id/summarize — basic (free) summaries', () => {
+        it('summarizes pasted text from the owning user article without loading a canonical article', async () => {
+            const pastedText = 'Pasted note content for a private summary.';
+            const userArticle = {
+                ...userArticleLink,
+                id: 'pasted-entry-id',
+                articleId: undefined,
+                pastedContent: pastedText,
+            };
+            const findByUserAndArticle = jest.fn();
+            const { controller, genAi, jobQueue } = makeArticlesController({
+                userArticles: {
+                    findById: jest.fn().mockResolvedValue(userArticle),
+                    findByUserAndArticle,
+                    updateById: jest.fn().mockResolvedValue(undefined),
+                },
+            });
+
+            const result = await controller.summarizeArticle(clerkUser, 'pasted-pasted-entry-id', undefined, undefined, 'en');
+
+            expect(result.status).toBe('completed');
+            expect(genAi.generateSummary).toHaveBeenCalledWith(pastedText, false, undefined, 'en', undefined);
+            expect(findByUserAndArticle).not.toHaveBeenCalled();
+            expect(jobQueue.addSummaryJob).not.toHaveBeenCalled();
+        });
+
+        it('summarizes pasted text inline for Pro users rather than queueing a missing article ID', async () => {
+            const pastedText = 'Pasted Pro note content.';
+            const userArticle = {
+                ...userArticleLink,
+                id: 'pasted-entry-id',
+                userId: proDbUser.id,
+                articleId: undefined,
+                pastedContent: pastedText,
+            };
+            const { controller, genAi, jobQueue } = makeArticlesController({
+                userArticles: {
+                    findById: jest.fn().mockResolvedValue(userArticle),
+                    updateById: jest.fn().mockResolvedValue(undefined),
+                },
+            });
+
+            const result = await controller.summarizeArticle(proClerkUser, 'pasted-pasted-entry-id', undefined, undefined, 'en');
+
+            expect(result.status).toBe('completed');
+            expect(genAi.generateSummary).toHaveBeenCalledWith(pastedText, false, undefined, 'en', undefined);
+            expect(jobQueue.addSummaryJob).not.toHaveBeenCalled();
+        });
+
         it('allows within 5/min, 30/hr, 100/day and calls LLM', async () => {
             const { controller, rateLimitService, genAi } = makeArticlesController();
             const result = await controller.summarizeArticle(clerkUser, article.id, 'true', 'true', 'en');

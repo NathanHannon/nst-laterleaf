@@ -54,9 +54,27 @@ type ArticleWithStatus = Partial<Article> & {
     summaryStatus?: string;
     summaryLanguage?: string;
     isUrlOnly?: boolean;
+    isPastedText?: boolean;
     hasContent?: boolean;
     audioLocation?: string;
 };
+
+const MAX_PASTED_TEXT_BYTES = 64 * 1024;
+
+const escapeHtml = (value: string): string =>
+    value.replace(/[&<>"']/g, (character) => ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;',
+    })[character] || character);
+
+const plainTextToHtml = (value: string): string =>
+    value
+        .split(/\n{2,}/)
+        .map((paragraph) => `<p>${escapeHtml(paragraph).replace(/\n/g, '<br>')}</p>`)
+        .join('');
 
 const PAYWALL_NOTICE = (url: string) => `
   <div class="paywall-notice" style="padding: 2rem; text-align: center; background: var(--card-bg); border-radius: 8px; margin: 2rem 0;">
@@ -162,27 +180,57 @@ export class ArticlesController {
 
     /**
      * Resolves the UserArticle link for a given route param `id`, which may
-     * either be a real article id or a `url-only-{userArticleId}` pseudo-id
-     * used for entries where content extraction failed.
+     * either a real article id or a user-owned `url-only-` / `pasted-` id.
      */
     private async resolveUserArticle(
         id: string,
         userId: string,
-    ): Promise<{ userArticle: UserArticle; isUrlOnlyEntry: boolean }> {
-        if (id.startsWith('url-only-')) {
-            const userArticleId = id.replace('url-only-', '');
+    ): Promise<{ userArticle: UserArticle; isStandaloneEntry: boolean }> {
+        const prefix = id.startsWith('url-only-') ? 'url-only-' : id.startsWith('pasted-') ? 'pasted-' : null;
+        if (prefix) {
+            const userArticleId = id.slice(prefix.length);
             const userArticle = await this.userArticlesService.findById(userArticleId);
-            if (!userArticle || userArticle.userId !== userId) {
+            if (
+                !userArticle ||
+                userArticle.userId !== userId ||
+                (prefix === 'pasted-' && !userArticle.pastedContent)
+            ) {
                 throw new NotFoundException('Article not found for this user.');
             }
-            return { userArticle, isUrlOnlyEntry: true };
+            return { userArticle, isStandaloneEntry: true };
         }
 
         const userArticle = await this.userArticlesService.findByUserAndArticle(userId, id);
         if (!userArticle) {
             throw new NotFoundException('Article not found for this user.');
         }
-        return { userArticle, isUrlOnlyEntry: false };
+        return { userArticle, isStandaloneEntry: false };
+    }
+
+    private toPastedTextEntry(userArticle: UserArticle): ArticleWithStatus {
+        const content = userArticle.pastedContent || '';
+        const firstLine = content.split(/\r?\n/).map((line) => line.trim()).find(Boolean) || 'Pasted text';
+
+        return {
+            id: `pasted-${userArticle.id}`,
+            url: '',
+            title: firstLine.length > 120 ? `${firstLine.slice(0, 117)}...` : firstLine,
+            content,
+            contentHtml: plainTextToHtml(content),
+            excerpt: content.replace(/\s+/g, ' ').slice(0, 240),
+            siteName: 'Pasted text',
+            createdAt: userArticle.createdAt,
+            updatedAt: userArticle.updatedAt,
+            userArticleId: userArticle.id,
+            isBookmarked: userArticle.isBookmarked || false,
+            isLiked: userArticle.isLiked || false,
+            isArchived: userArticle.isArchived || false,
+            summary: userArticle.summary || undefined,
+            summaryStatus: userArticle.summaryStatus,
+            summaryLanguage: userArticle.summaryLanguage || 'en',
+            hasContent: true,
+            isPastedText: true,
+        };
     }
 
     /**
@@ -459,6 +507,7 @@ export class ArticlesController {
         articleId: string,
         language?: string,
         provider?: GenerationProviderName,
+        allowProQueue: boolean = true,
     ): Promise<{
         summary: string;
         model: string;
@@ -467,7 +516,7 @@ export class ArticlesController {
         queuedForRetry: boolean;
     }> {
         // Pro Summaries: queue immediately due to strict rate limits
-        if (isProSummary) {
+        if (isProSummary && allowProQueue) {
             await this.jobQueueService.addSummaryJob({ articleId, userId, content, isPro: true, language, provider });
 
             return {
@@ -542,14 +591,14 @@ export class ArticlesController {
         @Param('id') id: string,
     ): Promise<void> {
         const userId = await this.getUserId(currentUser);
-        const { userArticle, isUrlOnlyEntry } = await this.resolveUserArticle(id, userId);
+        const { userArticle, isStandaloneEntry } = await this.resolveUserArticle(id, userId);
 
         const newBookmarkStatus = !userArticle.isBookmarked;
         await this.userArticlesService.updateById(userArticle.id, {
             isBookmarked: newBookmarkStatus,
         });
 
-        if (!isUrlOnlyEntry && userArticle.articleId) {
+        if (!isStandaloneEntry && userArticle.articleId) {
             await this.articlesService.updateBookmarkCountAtomic(
                 userArticle.articleId,
                 newBookmarkStatus ? 1 : -1,
@@ -671,7 +720,6 @@ export class ArticlesController {
                             processingTimeMs,
                         };
                     }
-
                     await this.userArticlesService.create({ userId, originalUrl: rawUrl, hasContent: false });
 
                     return {
@@ -1074,6 +1122,34 @@ export class ArticlesController {
         return article;
     }
 
+    @Post('paste')
+    async savePastedText(
+        @CurrentUser() currentUser: ClerkUserProfile,
+        @Body() body: { content?: string },
+    ): Promise<ArticleWithStatus> {
+        const content = body.content?.trim();
+        if (!content) {
+            throw new BadRequestException('Paste some text before saving.');
+        }
+        if (Buffer.byteLength(content, 'utf8') > MAX_PASTED_TEXT_BYTES) {
+            throw new BadRequestException('Pasted text must be 64 KB or less.');
+        }
+
+        const { user } = await this.getAuthContext(currentUser);
+        await this.rateLimitService.enforce(user.id, 'import', RATE_LIMITS.import);
+        await this.rateLimitService.enforce(GLOBAL_RATE_LIMIT_KEY, 'import', GLOBAL_RATE_LIMITS.import);
+
+        const userArticle = await this.userArticlesService.create({
+            userId: user.id,
+            pastedContent: content,
+            hasContent: true,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+        });
+
+        return this.toPastedTextEntry(userArticle);
+    }
+
     @Get('count')
     async count(@Query('where') where?: string): Promise<{ count: number }> {
         const parsedWhere = where
@@ -1105,8 +1181,9 @@ export class ArticlesController {
         }
 
         const successfulLinks = filteredLinks.filter((link) => link.articleId);
+        const pastedLinks = filteredLinks.filter((link) => !link.articleId && !!link.pastedContent);
         const urlOnlyLinks = filteredLinks.filter(
-            (link) => !link.articleId && link.originalUrl,
+            (link) => !link.articleId && !link.pastedContent && link.originalUrl,
         );
 
         const articleIds = successfulLinks.map((link) => link.articleId as string);
@@ -1152,7 +1229,8 @@ export class ArticlesController {
             isUrlOnly: true,
         }));
 
-        const allEntries = [...articlesWithStatus, ...urlOnlyEntries];
+        const pastedEntries = pastedLinks.map((link) => this.toPastedTextEntry(link));
+        const allEntries = [...articlesWithStatus, ...urlOnlyEntries, ...pastedEntries];
         allEntries.sort(
             (a, b) => new Date(b.createdAt || 0).getTime() - new Date(a.createdAt || 0).getTime(),
         );
@@ -1175,6 +1253,14 @@ export class ArticlesController {
         @Param('id') id: string,
     ): Promise<ArticleWithStatus> {
         const userId = await this.getUserId(currentUser);
+
+        if (id.startsWith('pasted-')) {
+            const userArticle = await this.userArticlesService.findById(id.slice('pasted-'.length));
+            if (!userArticle || userArticle.userId !== userId || !userArticle.pastedContent) {
+                throw new NotFoundException('Article not found');
+            }
+            return this.toPastedTextEntry(userArticle);
+        }
 
         if (id.startsWith('url-only-')) {
             const userArticleId = id.replace('url-only-', '');
@@ -1200,7 +1286,7 @@ export class ArticlesController {
                 summary: userArticleLink.summary,
                 summaryStatus: userArticleLink.summaryStatus,
                 summaryLanguage: userArticleLink.summaryLanguage || 'en',
-                audioLocation: userArticleLink.audioLocation,
+                audioLocation: userArticleLink.audioLocation || undefined,
                 isUrlOnly: true,
             };
         }
@@ -1229,7 +1315,7 @@ export class ArticlesController {
             summary: userArticleLink.summary,
             summaryStatus: userArticleLink.summaryStatus,
             summaryLanguage: userArticleLink.summaryLanguage || 'en',
-            audioLocation: userArticleLink.audioLocation,
+            audioLocation: userArticleLink.audioLocation || undefined,
             narrationLocation: article.narrationLocation,
             narrationStatus: article.narrationStatus,
             hasContent,
@@ -1270,12 +1356,23 @@ export class ArticlesController {
         @Param('id') id: string,
     ): Promise<void> {
         const userId = await this.getUserId(currentUser);
-        const { userArticle, isUrlOnlyEntry } = await this.resolveUserArticle(id, userId);
+        const { userArticle, isStandaloneEntry } = await this.resolveUserArticle(id, userId);
 
         const wasBookmarked = userArticle.isBookmarked;
+        if (!isStandaloneEntry && userArticle.articleId) {
+            const audioLocation = userArticle.audioLocation || await this.storageService.checkAudioExists(
+                userArticle.articleId,
+                userId,
+                'podcast',
+            );
+            if (audioLocation) {
+                await this.storageService.deletePodcastAudio(audioLocation);
+            }
+        }
+
         await this.userArticlesService.delete(userArticle);
 
-        if (!isUrlOnlyEntry && userArticle.articleId) {
+        if (!isStandaloneEntry && userArticle.articleId) {
             await this.articlesService.updateSaveCountAtomic(userArticle.articleId, -1);
             if (wasBookmarked) {
                 await this.articlesService.updateBookmarkCountAtomic(userArticle.articleId, -1);
@@ -1319,14 +1416,28 @@ export class ArticlesController {
             );
         }
 
-        const userArticleLink = await this.userArticlesService.findByUserAndArticle(user.id, id);
-        if (!userArticleLink) {
-            throw new NotFoundException('Article not found in user library');
-        }
+        const isPastedEntry = id.startsWith('pasted-');
+        let userArticleLink: UserArticle;
+        let summaryContent: string;
+        if (isPastedEntry) {
+            const resolved = await this.resolveUserArticle(id, user.id);
+            userArticleLink = resolved.userArticle;
+            summaryContent = userArticleLink.pastedContent || '';
+            if (!summaryContent.trim()) {
+                throw new BadRequestException('Pasted text is empty and cannot be summarized.');
+            }
+        } else {
+            const articleLink = await this.userArticlesService.findByUserAndArticle(user.id, id);
+            if (!articleLink) {
+                throw new NotFoundException('Article not found in user library');
+            }
+            userArticleLink = articleLink;
 
-        const article = await this.articlesService.findById(id);
-        if (!article) {
-            throw new NotFoundException('Article content not found');
+            const article = await this.articlesService.findById(id);
+            if (!article) {
+                throw new NotFoundException('Article content not found');
+            }
+            summaryContent = article.content || '';
         }
 
         const currentLanguage = userArticleLink.summaryLanguage || 'en';
@@ -1360,12 +1471,13 @@ export class ArticlesController {
             await this.userArticlesService.updateById(userArticleLink.id, { summaryStatus: 'pending' });
 
             const result = await this.generateSummaryWithRetry(
-                article.content || '',
+                summaryContent,
                 isGeneratingProSummary,
                 user.id,
                 id,
                 language,
                 providerOverride,
+                !isPastedEntry,
             );
 
             if (result.status === 'completed') {
@@ -1397,10 +1509,7 @@ export class ArticlesController {
     ): Promise<void> {
         const { user } = await this.getAuthContext(currentUser);
 
-        const userArticleLink = await this.userArticlesService.findByUserAndArticle(user.id, id);
-        if (!userArticleLink) {
-            throw new NotFoundException('Article not found in user library');
-        }
+        const { userArticle: userArticleLink } = await this.resolveUserArticle(id, user.id);
 
         userArticleLink.summary = '';
         await this.userArticlesService.save(userArticleLink);
@@ -1631,23 +1740,34 @@ export class ArticlesController {
             throw new NotFoundException('Article not found for this user.');
         }
 
-        if (!userArticle.audioLocation) {
+        const audioLocation = userArticle.audioLocation || await this.storageService.checkAudioExists(
+            id,
+            user.id,
+            'podcast',
+        );
+
+        if (!audioLocation) {
+            await this.userArticlesService.updateById(userArticle.id, {
+                audioLocation: null,
+                podcastScript: null,
+                audioStatus: 'idle',
+            });
             return;
         }
 
         try {
-            await this.storageService.deletePodcastAudio(userArticle.audioLocation);
+            await this.storageService.deletePodcastAudio(audioLocation);
 
             await this.userArticlesService.updateById(userArticle.id, {
-                audioLocation: undefined,
-                podcastScript: undefined,
+                audioLocation: null,
+                podcastScript: null,
                 audioStatus: 'idle',
             });
         } catch (error) {
             if (error instanceof Error && error.message.includes('not found')) {
                 await this.userArticlesService.updateById(userArticle.id, {
-                    audioLocation: undefined,
-                    podcastScript: undefined,
+                    audioLocation: null,
+                    podcastScript: null,
                     audioStatus: 'idle',
                 });
                 return;
@@ -1714,7 +1834,6 @@ export class ArticlesController {
         }
 
         const userArticle = await this.userArticlesService.findByUserAndArticle(user.id, id);
-
         if (userArticle?.audioLocation) {
             return {
                 hasAudio: true,

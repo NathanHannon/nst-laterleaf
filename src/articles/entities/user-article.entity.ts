@@ -31,6 +31,9 @@ export class UserArticle {
     @Column({ name: 'has_content', default: false })
     hasContent?: boolean;
 
+    @Column({ name: 'pasted_content', type: 'text', nullable: true })
+    pastedContent?: string;
+
     @Column({ type: 'text', nullable: true })
     summary?: string;
 
@@ -47,10 +50,10 @@ export class UserArticle {
     chatInteractionId?: string;
 
     @Column({ name: 'podcast_script', type: 'jsonb', nullable: true })
-    podcastScript?: object;
+    podcastScript?: object | null;
 
-    @Column({ name: 'audio_location', nullable: true })
-    audioLocation?: string;
+    @Column({ name: 'audio_location', type: 'varchar', nullable: true })
+    audioLocation?: string | null;
 
     @Column({ name: 'audio_status', default: 'idle' })
     audioStatus?: string;

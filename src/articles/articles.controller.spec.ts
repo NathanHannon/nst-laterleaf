@@ -216,4 +216,162 @@ describe('ArticlesController provider authorization', () => {
             threshold: 45,
         });
     });
+
+    it('saves pasted text privately and returns escaped reader content', async () => {
+        const savedAt = new Date();
+        const userArticlesService = {
+            create: jest.fn().mockImplementation(async (data) => ({
+                id: 'user-article-id',
+                ...data,
+                createdAt: savedAt,
+                updatedAt: savedAt,
+            })),
+        } as unknown as UserArticlesService;
+        const usersService = {
+            findByClerkId: jest.fn().mockResolvedValue({ id: 'database-user-id', isPro: false }),
+        } as unknown as UsersService;
+        const controller = new ArticlesController(
+            {} as ArticlesService,
+            userArticlesService,
+            {} as ArticleChunksService,
+            usersService,
+            {} as ContentExtractionService,
+            {} as MetadataScrapingService,
+            {} as ContentModerationService,
+            {} as StorageService,
+            {} as GenAiService,
+            {} as JobQueueService,
+            { enforce: jest.fn().mockResolvedValue(undefined) } as any,
+            { get: jest.fn() } as unknown as ConfigService,
+        );
+
+        const result = await controller.savePastedText(nonAdmin, { content: 'My copied title\n\n<script>alert(1)</script>' });
+
+        expect(userArticlesService.create).toHaveBeenCalledWith(expect.objectContaining({
+            userId: 'database-user-id',
+            pastedContent: 'My copied title\n\n<script>alert(1)</script>',
+            hasContent: true,
+        }));
+        expect(result).toMatchObject({
+            id: 'pasted-user-article-id',
+            title: 'My copied title',
+            isPastedText: true,
+            contentHtml: '<p>My copied title</p><p>&lt;script&gt;alert(1)&lt;/script&gt;</p>',
+        });
+    });
+
+    it('deletes an orphaned podcast file when a re-saved article has no audio URL', async () => {
+        const audioUrl = 'https://cdn.example.com/podcasts/database-user-id/article-id_podcast-old.mp3';
+        const userArticlesService = {
+            findByUserAndArticle: jest.fn().mockResolvedValue({ id: 'user-article-id' }),
+            updateById: jest.fn().mockResolvedValue(undefined),
+        } as unknown as UserArticlesService;
+        const usersService = {
+            findByClerkId: jest.fn().mockResolvedValue({ id: 'database-user-id', isPro: true }),
+        } as unknown as UsersService;
+        const storageService = {
+            checkAudioExists: jest.fn().mockResolvedValue(audioUrl),
+            deletePodcastAudio: jest.fn().mockResolvedValue(undefined),
+        } as unknown as StorageService;
+        const controller = new ArticlesController(
+            {} as ArticlesService,
+            userArticlesService,
+            {} as ArticleChunksService,
+            usersService,
+            {} as ContentExtractionService,
+            {} as MetadataScrapingService,
+            {} as ContentModerationService,
+            storageService,
+            {} as GenAiService,
+            {} as JobQueueService,
+            { enforce: jest.fn().mockResolvedValue(undefined) } as any,
+            { get: jest.fn() } as unknown as ConfigService,
+        );
+
+        await controller.deletePodcastAudio(nonAdmin, 'article-id');
+
+        expect(storageService.checkAudioExists).toHaveBeenCalledWith('article-id', 'database-user-id', 'podcast');
+        expect(storageService.deletePodcastAudio).toHaveBeenCalledWith(audioUrl);
+        expect(userArticlesService.updateById).toHaveBeenCalledWith('user-article-id', {
+            audioLocation: null,
+            podcastScript: null,
+            audioStatus: 'idle',
+        });
+    });
+
+    it('clears a persisted podcast URL instead of leaving it linked after deletion', async () => {
+        const audioUrl = 'https://cdn.example.com/podcast.mp3';
+        const userArticlesService = {
+            findByUserAndArticle: jest.fn().mockResolvedValue({ id: 'user-article-id', audioLocation: audioUrl }),
+            updateById: jest.fn().mockResolvedValue(undefined),
+        } as unknown as UserArticlesService;
+        const usersService = {
+            findByClerkId: jest.fn().mockResolvedValue({ id: 'database-user-id', isPro: true }),
+        } as unknown as UsersService;
+        const storageService = {
+            deletePodcastAudio: jest.fn().mockResolvedValue(undefined),
+        } as unknown as StorageService;
+        const controller = new ArticlesController(
+            {} as ArticlesService,
+            userArticlesService,
+            {} as ArticleChunksService,
+            usersService,
+            {} as ContentExtractionService,
+            {} as MetadataScrapingService,
+            {} as ContentModerationService,
+            storageService,
+            {} as GenAiService,
+            {} as JobQueueService,
+            { enforce: jest.fn().mockResolvedValue(undefined) } as any,
+            { get: jest.fn() } as unknown as ConfigService,
+        );
+
+        await controller.deletePodcastAudio(nonAdmin, 'article-id');
+
+        expect(storageService.deletePodcastAudio).toHaveBeenCalledWith(audioUrl);
+        expect(userArticlesService.updateById).toHaveBeenCalledWith('user-article-id', {
+            audioLocation: null,
+            podcastScript: null,
+            audioStatus: 'idle',
+        });
+    });
+
+    it('deletes orphaned podcast audio before removing a saved article', async () => {
+        const audioUrl = 'https://cdn.example.com/podcasts/database-user-id/article-id_podcast-old.mp3';
+        const userArticle = { id: 'user-article-id', articleId: 'article-id', isBookmarked: false };
+        const deleteUserArticle = jest.fn().mockResolvedValue(undefined);
+        const userArticlesService = {
+            findByUserAndArticle: jest.fn().mockResolvedValue(userArticle),
+            delete: deleteUserArticle,
+        } as unknown as UserArticlesService;
+        const usersService = {
+            findByClerkId: jest.fn().mockResolvedValue({ id: 'database-user-id', isPro: false }),
+        } as unknown as UsersService;
+        const storageService = {
+            checkAudioExists: jest.fn().mockResolvedValue(audioUrl),
+            deletePodcastAudio: jest.fn().mockResolvedValue(undefined),
+        } as unknown as StorageService;
+        const controller = new ArticlesController(
+            { updateSaveCountAtomic: jest.fn().mockResolvedValue(undefined) } as unknown as ArticlesService,
+            userArticlesService,
+            {} as ArticleChunksService,
+            usersService,
+            {} as ContentExtractionService,
+            {} as MetadataScrapingService,
+            {} as ContentModerationService,
+            storageService,
+            {} as GenAiService,
+            {} as JobQueueService,
+            { enforce: jest.fn().mockResolvedValue(undefined) } as any,
+            { get: jest.fn() } as unknown as ConfigService,
+        );
+
+        await controller.deleteById(nonAdmin, 'article-id');
+
+        expect(storageService.checkAudioExists).toHaveBeenCalledWith('article-id', 'database-user-id', 'podcast');
+        expect(storageService.deletePodcastAudio).toHaveBeenCalledWith(audioUrl);
+        expect(deleteUserArticle).toHaveBeenCalledWith(userArticle);
+        expect(storageService.deletePodcastAudio.mock.invocationCallOrder[0])
+            .toBeLessThan(deleteUserArticle.mock.invocationCallOrder[0]);
+    });
 });
