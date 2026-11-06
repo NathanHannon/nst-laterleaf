@@ -794,10 +794,10 @@ export class ContentExtractionService {
         const DOMPurify = createDOMPurify(window as unknown as Parameters<typeof createDOMPurify>[0]);
 
         const dom = new JSDOM(rawHtml);
-        const doc = dom.window.document;
+        const doc: Document = dom.window.document;
 
         let imageUrl: string | undefined;
-        const images = doc.querySelectorAll('img');
+        const images = doc.querySelectorAll<HTMLImageElement>('img');
         for (const img of Array.from(images)) {
             const w = parseInt(img.getAttribute('width') || '0', 10);
             const h = parseInt(img.getAttribute('height') || '0', 10);
