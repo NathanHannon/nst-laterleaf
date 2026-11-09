@@ -220,6 +220,7 @@ describe('ArticlesController provider authorization', () => {
     it('saves pasted text privately and returns escaped reader content', async () => {
         const savedAt = new Date();
         const userArticlesService = {
+            savePastedEmbedding: jest.fn().mockResolvedValue(undefined),
             create: jest.fn().mockImplementation(async (data) => ({
                 id: 'user-article-id',
                 ...data,
@@ -239,22 +240,31 @@ describe('ArticlesController provider authorization', () => {
             {} as MetadataScrapingService,
             {} as ContentModerationService,
             {} as StorageService,
-            {} as GenAiService,
+            { generateEmbeddings: jest.fn().mockResolvedValue([0.1, 0.2]) } as unknown as GenAiService,
             {} as JobQueueService,
             { enforce: jest.fn().mockResolvedValue(undefined) } as any,
             { get: jest.fn() } as unknown as ConfigService,
         );
 
-        const result = await controller.savePastedText(nonAdmin, { content: 'My copied title\n\n<script>alert(1)</script>' });
+        const result = await controller.savePastedText(nonAdmin, {
+            title: 'A user-chosen title',
+            content: 'My copied title\n\n<script>alert(1)</script>',
+        });
 
         expect(userArticlesService.create).toHaveBeenCalledWith(expect.objectContaining({
             userId: 'database-user-id',
             pastedContent: 'My copied title\n\n<script>alert(1)</script>',
+            pastedTitle: 'A user-chosen title',
             hasContent: true,
         }));
+        expect(userArticlesService.savePastedEmbedding).toHaveBeenCalledWith(
+            'user-article-id',
+            'database-user-id',
+            [0.1, 0.2],
+        );
         expect(result).toMatchObject({
             id: 'pasted-user-article-id',
-            title: 'My copied title',
+            title: 'A user-chosen title',
             isPastedText: true,
             contentHtml: '<p>My copied title</p><p>&lt;script&gt;alert(1)&lt;/script&gt;</p>',
         });

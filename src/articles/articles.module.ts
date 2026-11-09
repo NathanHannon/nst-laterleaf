@@ -12,6 +12,7 @@ import { ChatController } from './chat.controller';
 import { ArticleTranslationController } from './article-translation.controller';
 import { ResearchController } from './research.controller';
 import { AnnotationController } from './annotation.controller';
+import { LibrarySearchController } from './library-search.controller';
 import { UsersModule } from '../users/users.module';
 import { ContentExtractionModule } from '../content-extraction/content-extraction.module';
 import { ContentModerationModule } from '../content-moderation/content-moderation.module';
@@ -32,7 +33,7 @@ import { RateLimitModule } from '../common/rate-limit/rate-limit.module';
         RateLimitModule,
     ],
     providers: [ArticlesService, UserArticlesService, ArticleChunksService],
-    controllers: [ArticlesController, UserMeArticlesController, ChatController, ArticleTranslationController, ResearchController, AnnotationController],
+    controllers: [ArticlesController, UserMeArticlesController, ChatController, ArticleTranslationController, ResearchController, AnnotationController, LibrarySearchController],
     exports: [ArticlesService, UserArticlesService, ArticleChunksService],
 })
 export class ArticlesModule { }

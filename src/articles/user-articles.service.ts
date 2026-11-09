@@ -48,6 +48,96 @@ export class UserArticlesService {
         await this.userArticlesRepository.update({ id }, partial);
     }
 
+    async savePastedEmbedding(id: string, userId: string, embedding: number[]): Promise<void> {
+        const embeddingString = `[${embedding.join(',')}]`;
+        await this.userArticlesRepository.query(
+            `UPDATE public.user_articles
+             SET pasted_embedding = $1::vector
+             WHERE id = $2 AND user_id = $3 AND pasted_content IS NOT NULL`,
+            [embeddingString, id, userId],
+        );
+    }
+
+    async semanticSearchPasted(embedding: number[], userId: string, limit = 10): Promise<Array<{
+        userArticleId: string;
+        title: string;
+        content: string;
+        excerpt: string;
+        siteName: string;
+        summary?: string;
+        audioLocation?: string | null;
+        createdAt: Date;
+        updatedAt: Date;
+        isBookmarked: boolean;
+        isLiked: boolean;
+        isArchived: boolean;
+        distance: number;
+    }>> {
+        const embeddingString = `[${embedding.join(',')}]`;
+        return this.userArticlesRepository.query(
+            `SELECT id AS "userArticleId",
+                    COALESCE(
+                        NULLIF(BTRIM(pasted_title), ''),
+                        LEFT(NULLIF(BTRIM(SPLIT_PART(pasted_content, E'\\n', 1)), ''), 120),
+                        'Pasted text'
+                    ) AS title,
+                    pasted_content AS content,
+                    LEFT(REGEXP_REPLACE(pasted_content, '\\s+', ' ', 'g'), 240) AS excerpt,
+                    'Pasted text' AS "siteName",
+                    summary, audio_location AS "audioLocation",
+                    created_at AS "createdAt", updated_at AS "updatedAt",
+                    is_bookmarked AS "isBookmarked", is_liked AS "isLiked",
+                    is_archived AS "isArchived",
+                    (pasted_embedding <=> $2::vector) AS distance
+             FROM public.user_articles
+             WHERE user_id = $1
+               AND pasted_content IS NOT NULL
+               AND pasted_embedding IS NOT NULL
+             ORDER BY pasted_embedding <=> $2::vector
+             LIMIT $3`,
+            [userId, embeddingString, limit],
+        );
+    }
+
+    async keywordSearchPasted(query: string, userId: string, limit = 20): Promise<Array<{
+        userArticleId: string;
+        title: string;
+        content: string;
+        excerpt: string;
+        siteName: string;
+        summary?: string;
+        audioLocation?: string | null;
+        createdAt: Date;
+        updatedAt: Date;
+        isBookmarked: boolean;
+        isLiked: boolean;
+        isArchived: boolean;
+    }>> {
+        const searchTerm = `%${query}%`;
+        return this.userArticlesRepository.query(
+            `SELECT id AS "userArticleId",
+                    COALESCE(
+                        NULLIF(BTRIM(pasted_title), ''),
+                        LEFT(NULLIF(BTRIM(SPLIT_PART(pasted_content, E'\\n', 1)), ''), 120),
+                        'Pasted text'
+                    ) AS title,
+                    pasted_content AS content,
+                    LEFT(REGEXP_REPLACE(pasted_content, '\\s+', ' ', 'g'), 240) AS excerpt,
+                    'Pasted text' AS "siteName", summary,
+                    audio_location AS "audioLocation",
+                    created_at AS "createdAt", updated_at AS "updatedAt",
+                    is_bookmarked AS "isBookmarked", is_liked AS "isLiked",
+                    is_archived AS "isArchived"
+             FROM public.user_articles
+             WHERE user_id = $1
+               AND pasted_content IS NOT NULL
+               AND (pasted_title ILIKE $2 OR pasted_content ILIKE $2)
+             ORDER BY created_at DESC
+             LIMIT $3`,
+            [userId, searchTerm, limit],
+        );
+    }
+
     save(entity: UserArticle): Promise<UserArticle> {
         return this.userArticlesRepository.save(entity);
     }

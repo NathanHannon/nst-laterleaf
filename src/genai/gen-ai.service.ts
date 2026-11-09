@@ -1408,20 +1408,22 @@ Instructions:
         articles: { id: string; title: string; excerpt?: string; content?: string }[],
         chunks?: { articleTitle: string; chunkText: string }[],
     ): Promise<string> {
-        // Build context from chunks (preferred) or fallback to truncated articles
+        // Use retrieved chunks where available and document text for other sources.
         let sourceContext: string;
         if (chunks?.length) {
-            // Group chunks by article title for structured context
             const byArticle = new Map<string, string[]>();
             for (const c of chunks) {
                 const existing = byArticle.get(c.articleTitle) || [];
                 existing.push(c.chunkText.substring(0, 1500));
                 byArticle.set(c.articleTitle, existing);
             }
-            sourceContext = Array.from(byArticle.entries())
-                .map(([title, texts], i) => {
-                    const articleNum = articles.findIndex((a) => a.title === title) + 1 || i + 1;
-                    return `[Article ${articleNum}] "${title}"\n${texts.join('\n\n')}`;
+            sourceContext = articles
+                .map((article, index) => {
+                    const retrievedChunks = byArticle.get(article.title);
+                    const text = retrievedChunks?.length
+                        ? retrievedChunks.join('\n\n')
+                        : (article.content || article.excerpt || '').substring(0, 2000);
+                    return `[Article ${index + 1}] "${article.title}" (id: ${article.id})\n${text}`;
                 })
                 .join('\n\n---\n\n');
         } else {

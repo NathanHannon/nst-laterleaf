@@ -34,6 +34,12 @@ export class UserArticle {
     @Column({ name: 'pasted_content', type: 'text', nullable: true })
     pastedContent?: string;
 
+    @Column({ name: 'pasted_title', type: 'varchar', length: 120, nullable: true })
+    pastedTitle?: string | null;
+
+    @Column({ name: 'pasted_embedding', type: 'text', nullable: true, select: false })
+    pastedEmbedding?: string;
+
     @Column({ type: 'text', nullable: true })
     summary?: string;
 

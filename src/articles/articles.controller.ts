@@ -60,6 +60,7 @@ type ArticleWithStatus = Partial<Article> & {
 };
 
 const MAX_PASTED_TEXT_BYTES = 64 * 1024;
+const MAX_PASTED_TITLE_LENGTH = 120;
 
 const escapeHtml = (value: string): string =>
     value.replace(/[&<>"']/g, (character) => ({
@@ -214,7 +215,7 @@ export class ArticlesController {
         return {
             id: `pasted-${userArticle.id}`,
             url: '',
-            title: firstLine.length > 120 ? `${firstLine.slice(0, 117)}...` : firstLine,
+            title: userArticle.pastedTitle?.trim() || (firstLine.length > 120 ? `${firstLine.slice(0, 117)}...` : firstLine),
             content,
             contentHtml: plainTextToHtml(content),
             excerpt: content.replace(/\s+/g, ' ').slice(0, 240),
@@ -1125,7 +1126,7 @@ export class ArticlesController {
     @Post('paste')
     async savePastedText(
         @CurrentUser() currentUser: ClerkUserProfile,
-        @Body() body: { content?: string },
+        @Body() body: { content?: string; title?: string },
     ): Promise<ArticleWithStatus> {
         const content = body.content?.trim();
         if (!content) {
@@ -1133,6 +1134,10 @@ export class ArticlesController {
         }
         if (Buffer.byteLength(content, 'utf8') > MAX_PASTED_TEXT_BYTES) {
             throw new BadRequestException('Pasted text must be 64 KB or less.');
+        }
+        const title = body.title?.trim();
+        if (title && title.length > MAX_PASTED_TITLE_LENGTH) {
+            throw new BadRequestException(`Title must be ${MAX_PASTED_TITLE_LENGTH} characters or less.`);
         }
 
         const { user } = await this.getAuthContext(currentUser);
@@ -1142,10 +1147,23 @@ export class ArticlesController {
         const userArticle = await this.userArticlesService.create({
             userId: user.id,
             pastedContent: content,
+            pastedTitle: title || null,
             hasContent: true,
             createdAt: new Date(),
             updatedAt: new Date(),
         });
+
+        try {
+            const embedding = await this.genAiService.generateEmbeddings(
+                `${title || ''}\n${content}`,
+                { purpose: 'article_storage', contextId: `pasted-${userArticle.id}` },
+            );
+            if (embedding.length > 0) {
+                await this.userArticlesService.savePastedEmbedding(userArticle.id, user.id, embedding);
+            }
+        } catch (error) {
+            this.logger.warn(`Pasted text was saved without an embedding: ${error instanceof Error ? error.message : error}`);
+        }
 
         return this.toPastedTextEntry(userArticle);
     }

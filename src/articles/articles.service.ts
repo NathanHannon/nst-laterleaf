@@ -208,8 +208,14 @@ export class ArticlesService {
     async semanticSearch(embedding: number[], userId: string, limit = 10): Promise<Article[]> {
         const embeddingString = `[${embedding.join(',')}]`;
         const sql = `
-            SELECT a.id, a.url, a.title, a.excerpt, a.author, a.image_url as "imageUrl",
-                   ua.is_bookmarked as "isBookmarked", ua.is_archived as "isArchived",
+                 SELECT a.id, a.url, a.title, a.excerpt, a.author,
+                     a.image_url AS "imageUrl", a.site_name AS "siteName",
+                     a.site_icon AS "siteIcon", a.og_image AS "ogImage",
+                     a.og_description AS "ogDescription", a.theme_color AS "themeColor",
+                       a.created_at AS "createdAt", a.updated_at AS "updatedAt",
+                     ua.id AS "userArticleId", ua.is_bookmarked AS "isBookmarked",
+                     ua.is_liked AS "isLiked", ua.is_archived AS "isArchived",
+                     ua.summary, ua.audio_location AS "audioLocation",
                    (a.embedding <=> $2) as distance
             FROM public.articles a
             INNER JOIN public.user_articles ua ON a.id = ua.article_id
@@ -218,6 +224,28 @@ export class ArticlesService {
             LIMIT $3;
         `;
         return this.articlesRepository.query(sql, [userId, embeddingString, limit]);
+    }
+
+    async keywordSearch(query: string, userId: string, limit = 20): Promise<Article[]> {
+        const searchTerm = `%${query}%`;
+        const sql = `
+                 SELECT a.id, a.url, a.title, a.excerpt, a.author,
+                     a.image_url AS "imageUrl", a.site_name AS "siteName",
+                     a.site_icon AS "siteIcon", a.og_image AS "ogImage",
+                     a.og_description AS "ogDescription", a.theme_color AS "themeColor",
+                   a.created_at AS "createdAt", a.updated_at AS "updatedAt",
+                   ua.id AS "userArticleId", ua.is_bookmarked AS "isBookmarked",
+                     ua.is_liked AS "isLiked", ua.is_archived AS "isArchived",
+                     ua.summary, ua.audio_location AS "audioLocation",
+                   CASE WHEN a.title ILIKE $2 THEN 0 ELSE 1 END AS "searchRank"
+            FROM public.articles a
+            INNER JOIN public.user_articles ua ON a.id = ua.article_id
+            WHERE ua.user_id = $1
+              AND (a.title ILIKE $2 OR a.author ILIKE $2 OR a.excerpt ILIKE $2 OR a.content ILIKE $2)
+            ORDER BY "searchRank", a.created_at DESC
+            LIMIT $3
+        `;
+        return this.articlesRepository.query(sql, [userId, searchTerm, limit]);
     }
 
     /**

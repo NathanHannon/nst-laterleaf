@@ -13,6 +13,7 @@ import type { ClerkUserProfile } from '../auth/interfaces/clerk-user-profile.int
 import { UsersService } from '../users/users.service';
 import { ArticlesService } from './articles.service';
 import { ArticleChunksService } from './article-chunks.service';
+import { UserArticlesService } from './user-articles.service';
 import { GenAiService } from '../genai/gen-ai.service';
 
 interface ResearchResponse {
@@ -31,6 +32,7 @@ export class ResearchController {
         private readonly usersService: UsersService,
         private readonly articlesService: ArticlesService,
         private readonly articleChunksService: ArticleChunksService,
+        private readonly userArticlesService: UserArticlesService,
         private readonly genAiService: GenAiService,
     ) { }
 
@@ -60,11 +62,33 @@ export class ResearchController {
             throw new UnprocessableEntityException('Could not process search query. Please try rephrasing.');
         }
 
-        // 2. Find relevant articles (for source attribution).
-        const articles = await this.articlesService.semanticSearch(queryEmbedding, user.id, limit);
-        if (articles.length === 0) {
+        // 2. Find relevant saved articles and pasted entries owned by this user.
+        const [articles, pastedEntries] = await Promise.all([
+            this.articlesService.semanticSearch(queryEmbedding, user.id, limit),
+            this.userArticlesService.semanticSearchPasted(queryEmbedding, user.id, limit),
+        ]);
+        const sources = [
+            ...articles.map((article) => ({
+                id: article.id,
+                title: article.title || 'Untitled',
+                url: article.url || '',
+                excerpt: article.excerpt ?? undefined,
+                content: article.content ?? undefined,
+                distance: Number((article as typeof article & { distance: number }).distance),
+            })),
+            ...pastedEntries.map((entry) => ({
+                id: `pasted-${entry.userArticleId}`,
+                title: entry.title || 'Pasted text',
+                url: '',
+                excerpt: entry.excerpt,
+                content: entry.content,
+                distance: Number(entry.distance),
+            })),
+        ].sort((first, second) => first.distance - second.distance).slice(0, limit);
+
+        if (sources.length === 0) {
             return {
-                report: 'No articles in your library are relevant to this query. Try saving more articles on this topic first.',
+                report: 'No items in your library are relevant to this query. Try saving more articles or pasted text on this topic first.',
                 articleCount: 0,
                 articleIds: [],
                 sources: [],
@@ -72,19 +96,14 @@ export class ResearchController {
         }
 
         // 3. Retrieve the most relevant chunks across these articles for deep context.
-        const relevantChunks = await this.articleChunksService.findRelevantChunks(queryEmbedding, user.id, {
-            limit: 12,
-        });
+        const relevantChunks = articles.length > 0
+            ? await this.articleChunksService.findRelevantChunks(queryEmbedding, user.id, { limit: 12 })
+            : [];
 
         // 4. Synthesize a research report using chunk-level context.
         const report = await this.genAiService.generateResearchReport(
             body.query,
-            articles.map((a) => ({
-                id: a.id,
-                title: a.title || 'Untitled',
-                excerpt: a.excerpt ?? undefined,
-                content: a.content ?? undefined,
-            })),
+            sources,
             relevantChunks.length > 0
                 ? relevantChunks.map((c) => ({ articleTitle: c.articleTitle, chunkText: c.chunkText }))
                 : undefined,
@@ -92,9 +111,9 @@ export class ResearchController {
 
         return {
             report,
-            articleCount: articles.length,
-            articleIds: articles.map((a) => a.id),
-            sources: articles.map((a) => ({ id: a.id, title: a.title || 'Untitled', url: a.url || '' })),
+            articleCount: sources.length,
+            articleIds: sources.map((source) => source.id),
+            sources: sources.map(({ id, title, url }) => ({ id, title, url })),
         };
     }
 }
