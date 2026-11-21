@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { LessThan, Repository } from 'typeorm';
 import { CuratedArticle } from './entities/curated-article.entity';
+import { isNonArticleUrl } from './feed-item-filter';
 
 /**
  */
@@ -12,12 +13,13 @@ export class CuratedArticlesService {
         private readonly curatedArticlesRepository: Repository<CuratedArticle>,
     ) { }
 
-    /** Used by the public Discover page: latest curated articles first. */
-    findLatest(limit: number): Promise<CuratedArticle[]> {
-        return this.curatedArticlesRepository.find({
+    /** Used by the public Discover page: latest curated articles first, excluding podcast/audio/video URLs. */
+    async findLatest(limit: number): Promise<CuratedArticle[]> {
+        const candidates = await this.curatedArticlesRepository.find({
             order: { fetchedAt: 'DESC' },
-            take: limit,
+            take: Math.min(Math.max(limit * 2, limit), 200),
         });
+        return candidates.filter((article) => !isNonArticleUrl(article.url)).slice(0, limit);
     }
 
     findByFeedId(feedId: string): Promise<CuratedArticle[]> {

@@ -1,4 +1,5 @@
-import { BadRequestException, Controller, Get, HttpCode, HttpStatus, Post, Req, UseGuards } from '@nestjs/common';
+import { timingSafeEqual } from 'crypto';
+import { BadRequestException, Controller, Get, HttpCode, HttpStatus, Logger, Post, Req, UnauthorizedException, UseGuards } from '@nestjs/common';
 import type { Request } from 'express';
 import { ClerkAuthGuard } from '../auth/guards/clerk-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -23,6 +24,7 @@ interface RevenueCatEvent {
  */
 @Controller()
 export class RevenuecatWebhookController {
+    private readonly logger = new Logger(RevenuecatWebhookController.name);
     private readonly expectedAuthHeader: string;
     private readonly rcApiSecret: string;
 
@@ -34,41 +36,49 @@ export class RevenuecatWebhookController {
         }
     }
 
+    private isValidAuthHeader(received: string | undefined): boolean {
+        if (!received) return false;
+        const a = Buffer.from(received);
+        const b = Buffer.from(this.expectedAuthHeader);
+        return a.length === b.length && timingSafeEqual(a, b);
+    }
+
     @Post('webhooks/revenuecat')
     @HttpCode(HttpStatus.OK)
     async handleRevenueCatWebhooks(@Req() req: Request): Promise<string> {
-        const payload = req.body as RevenueCatEvent;
+        const receivedAuthHeader = req.headers['authorization'];
+        if (!this.isValidAuthHeader(receivedAuthHeader)) {
+            this.logger.warn('Rejected unauthorized RevenueCat webhook request.');
+            throw new UnauthorizedException('Unauthorized webhook request.');
+        }
+
+        const payload = req.body as RevenueCatEvent | undefined;
+        if (!payload?.event?.app_user_id) {
+            throw new BadRequestException('Invalid RevenueCat webhook payload.');
+        }
+
         const startTime = Date.now();
-        console.log(`\n--- [${new Date().toISOString()}] ---`);
-        console.log(`[1/5] \u25B6\uFE0F Webhook received for event type: ${payload.event.type} in ${payload.environment}`);
+        this.logger.log(`Webhook received: ${payload.event.type} (${payload.environment})`);
 
         try {
-            const receivedAuthHeader = req.headers['authorization'];
-            console.log(`[2/5] \uD83D\uDD75\uFE0F Verifying auth header...`);
-            if (receivedAuthHeader !== this.expectedAuthHeader) {
-                console.error(`[FAIL] Unauthorized webhook. Received: ${receivedAuthHeader}`);
-                return 'Ignoring unauthorized webhook.';
-            }
-            console.log(`[2/5] \u2705 Auth header verified.`);
-
             const clerkId = payload.event.app_user_id;
-            console.log(`[3/5] \uD83D\uDCDE Processing subscriber info for user: ${clerkId}`);
 
             let subscriber = payload.event.subscriber;
 
             if (!subscriber) {
-                console.log(`[3/5] -> Subscriber not in payload, fetching from API...`);
-
                 const apiBaseUrl =
                     payload.environment === 'SANDBOX'
                         ? 'https://api-sandbox.revenuecat.com'
                         : 'https://api.revenuecat.com';
 
-                const rcResponse = await fetch(`${apiBaseUrl}/v2/subscribers/${clerkId}`, {
-                    headers: {
-                        Authorization: 'Bearer ' + this.rcApiSecret,
+                const rcResponse = await fetch(
+                    `${apiBaseUrl}/v2/subscribers/${encodeURIComponent(clerkId)}`,
+                    {
+                        headers: {
+                            Authorization: 'Bearer ' + this.rcApiSecret,
+                        },
                     },
-                });
+                );
 
                 if (!rcResponse.ok) {
                     const errorBody = await rcResponse.text();

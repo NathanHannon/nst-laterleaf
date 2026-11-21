@@ -1,5 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TypeOrmModuleOptions } from '@nestjs/typeorm';
 import { User } from '../users/entities/user.entity';
@@ -37,6 +38,10 @@ function buildSslConfig(configService: ConfigService): object {
     if (fs.existsSync(certPath)) {
         return { ca: fs.readFileSync(certPath) };
     }
+    Logger.warn(
+        'DATABASE_CA_CERT not set and local CA cert not found; falling back to rejectUnauthorized: false',
+        'TypeOrmConfig',
+    );
     return { rejectUnauthorized: false };
 }
 

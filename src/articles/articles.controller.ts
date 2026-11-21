@@ -843,7 +843,10 @@ export class ArticlesController {
                 let friendlyMessage =
                     "We couldn't extract the content from this website, but we've saved the link to your library. You can access the original article by clicking the link.";
 
-                if (errorMessage.includes('timeout') || errorMessage.includes('took too long')) {
+                if (errorMessage.includes('JavaScript')) {
+                    friendlyMessage =
+                        "This site requires JavaScript rendering so we saved the link to your library instead. Use the LaterLeaf browser extension to capture the full article.";
+                } else if (errorMessage.includes('timeout') || errorMessage.includes('took too long')) {
                     friendlyMessage =
                         "The website took too long to respond, so we've saved the link to your library instead. You can access the original article by clicking the link.";
                 } else if (errorMessage.includes('access') || errorMessage.includes('block') || errorMessage.includes('forbidden')) {

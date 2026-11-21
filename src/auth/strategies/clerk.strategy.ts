@@ -17,9 +17,12 @@ export class ClerkStrategy extends PassportStrategy(Strategy, 'clerk') {
             throw new Error('CLERK_JWKS_URL environment variable not set');
         }
 
+        const issuer = configService.get<string>('CLERK_ISSUER');
+
         super({
             jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
             algorithms: ['RS256'],
+            ...(issuer ? { issuer } : {}),
             secretOrKeyProvider: jwksRsa.passportJwtSecret({
                 cache: true,
                 rateLimit: true,

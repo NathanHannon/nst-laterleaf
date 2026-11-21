@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import Parser from 'rss-parser';
 import { ContentExtractionService } from '../content-extraction/content-extraction.service';
 import { CuratedFeedsService } from './curated-feeds.service';
+import { isNonArticleFeedItem } from './feed-item-filter';
 
 export interface FeedItem {
     title: string;
@@ -50,8 +51,13 @@ export class CuratedFeedFetchingService {
                 const feed = await this.parser.parseURL(feedConfig.url);
                 this.logger.log(`Fetched ${feed.items.length} items from ${feedConfig.name}`);
 
+                let skippedNonArticles = 0;
                 feed.items.forEach((item) => {
                     if (item.title && item.link) {
+                        if (isNonArticleFeedItem(item)) {
+                            skippedNonArticles++;
+                            return;
+                        }
                         const rawContent = (item as { contentEncoded?: string }).contentEncoded || item.content;
                         const { cleanHtml, imageUrl } = this.contentExtractionService.processFeedHtml(rawContent);
 
@@ -76,6 +82,11 @@ export class CuratedFeedFetchingService {
                         });
                     }
                 });
+                if (skippedNonArticles > 0) {
+                    this.logger.log(
+                        `Skipped ${skippedNonArticles} non-article (podcast/audio/video) items from ${feedConfig.name}`,
+                    );
+                }
             } catch (error) {
                 this.logger.error(`Failed to fetch or parse feed: ${feedConfig.name}`, error);
             }

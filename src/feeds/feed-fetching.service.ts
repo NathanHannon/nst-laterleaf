@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { assertSafeUrl } from '../common/safe-url';
 import Parser from 'rss-parser';
 import { ContentExtractionService } from '../content-extraction/content-extraction.service';
 import { FeedsService } from './feeds.service';
@@ -47,9 +48,13 @@ export class FeedFetchingService {
         let articlesAdded = 0;
 
         try {
+            await assertSafeUrl(feed.url);
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 15000);
             const response = await fetch(feed.url, {
                 headers: { 'User-Agent': 'LaterLeaf/1.0' },
-            });
+                signal: controller.signal,
+            }).finally(() => clearTimeout(timeoutId));
 
             if (!response.ok) return 0;
 

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import parseRobots from 'robots-parser';
 import { LATERLEAF_BOT_USER_AGENT } from './utils/scraping-constants';
+import { assertSafeUrl } from '../common/safe-url';
 
 interface Robots {
     isAllowed(url: string, ua?: string): boolean | undefined;
@@ -25,6 +26,7 @@ export class RobotsTxtService {
             if (!robots) {
                 console.log(`🤖 [ROBOTS] Fetching robots.txt from: ${robotsUrl}`);
                 try {
+                    await assertSafeUrl(robotsUrl);
                     const controller = new AbortController();
                     const timeoutId = setTimeout(() => controller.abort(), 5000);
                     const response = await fetch(robotsUrl, {

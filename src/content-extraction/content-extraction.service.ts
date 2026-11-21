@@ -5,6 +5,7 @@ import { JSDOM } from 'jsdom';
 import { SCRAPING_UTILS } from './utils/scraping-utils';
 import { MetadataScrapingService } from './metadata-scraping.service';
 import { RobotsTxtService } from './robots-txt.service';
+import { assertSafeUrl } from '../common/safe-url';
 
 interface ExtractedArticle {
     title: string;
@@ -163,6 +164,7 @@ export class ContentExtractionService {
     }
 
     private async tryStaticExtraction(url: string, userAgent: string): Promise<ExtractedArticle & { rawHtml: string }> {
+        await assertSafeUrl(url);
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 10000);
 
@@ -208,6 +210,7 @@ export class ContentExtractionService {
         url: string,
         userAgent: string,
     ): Promise<ExtractedArticle & { rawHtml: string; canonicalUrl?: string }> {
+        await assertSafeUrl(url);
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 10000);
 
