@@ -384,4 +384,77 @@ describe('ArticlesController provider authorization', () => {
         expect(storageService.deletePodcastAudio.mock.invocationCallOrder[0])
             .toBeLessThan(deleteUserArticle.mock.invocationCallOrder[0]);
     });
+
+    it('returns related articles from the user library using the article embedding', async () => {
+        const related = [
+            {
+                id: 'other-article-id',
+                title: 'Related Article',
+                excerpt: 'An excerpt',
+                imageUrl: 'https://example.com/img.png',
+                url: 'https://example.com/related',
+                similarity: 0.87,
+                isBookmarked: true,
+            },
+        ];
+        const articlesService = {
+            getEmbeddingVector: jest.fn().mockResolvedValue([0.1, 0.2, 0.3]),
+            findRelatedInUserLibrary: jest.fn().mockResolvedValue(related),
+        } as unknown as ArticlesService;
+        const userArticlesService = {
+            findByUserAndArticle: jest.fn().mockResolvedValue({ id: 'user-article-id' }),
+        } as unknown as UserArticlesService;
+        const usersService = {
+            findByClerkId: jest.fn().mockResolvedValue({ id: 'database-user-id', isPro: false }),
+        } as unknown as UsersService;
+        const controller = new ArticlesController(
+            articlesService,
+            userArticlesService,
+            {} as ArticleChunksService,
+            usersService,
+            {} as ContentExtractionService,
+            {} as MetadataScrapingService,
+            {} as ContentModerationService,
+            {} as StorageService,
+            {} as GenAiService,
+            {} as JobQueueService,
+            { enforce: jest.fn().mockResolvedValue(undefined) } as any,
+            { get: jest.fn() } as unknown as ConfigService,
+        );
+
+        const result = await controller.findRelated(nonAdmin, 'article-id', '3');
+
+        expect(userArticlesService.findByUserAndArticle).toHaveBeenCalledWith('database-user-id', 'article-id');
+        expect(articlesService.getEmbeddingVector).toHaveBeenCalledWith('article-id');
+        expect(articlesService.findRelatedInUserLibrary).toHaveBeenCalledWith(
+            'article-id',
+            [0.1, 0.2, 0.3],
+            'database-user-id',
+            3,
+        );
+        expect(result).toEqual(related);
+    });
+
+    it('returns an empty list for pasted or url-only articles when fetching related articles', async () => {
+        const usersService = {
+            findByClerkId: jest.fn().mockResolvedValue({ id: 'database-user-id', isPro: false }),
+        } as unknown as UsersService;
+        const controller = new ArticlesController(
+            {} as ArticlesService,
+            {} as UserArticlesService,
+            {} as ArticleChunksService,
+            usersService,
+            {} as ContentExtractionService,
+            {} as MetadataScrapingService,
+            {} as ContentModerationService,
+            {} as StorageService,
+            {} as GenAiService,
+            {} as JobQueueService,
+            { enforce: jest.fn().mockResolvedValue(undefined) } as any,
+            { get: jest.fn() } as unknown as ConfigService,
+        );
+
+        await expect(controller.findRelated(nonAdmin, 'pasted-123')).resolves.toEqual([]);
+        await expect(controller.findRelated(nonAdmin, 'url-only-456')).resolves.toEqual([]);
+    });
 });

@@ -226,6 +226,74 @@ export class ArticlesService {
         return this.articlesRepository.query(sql, [userId, embeddingString, limit]);
     }
 
+    /**
+     * Finds articles in the user's library that are semantically related to
+     * the given article using pgvector cosine similarity, excluding the
+     * source article itself.
+     */
+    async findRelatedInUserLibrary(
+        articleId: string,
+        embedding: number[],
+        userId: string,
+        limit = 3,
+        minSimilarity = 0.5,
+    ): Promise<
+        {
+            id: string;
+            title?: string;
+            excerpt?: string;
+            imageUrl?: string;
+            url?: string;
+            similarity: number;
+            isBookmarked: boolean;
+        }[]
+    > {
+        const embeddingString = `[${embedding.join(',')}]`;
+        const sql = `
+            SELECT
+                a.id,
+                a.title,
+                a.excerpt,
+                a.image_url AS "imageUrl",
+                a.url,
+                (1 - (a.embedding <=> $2)) AS similarity,
+                COALESCE(ua.is_bookmarked, false) AS "isBookmarked"
+            FROM public.articles a
+            INNER JOIN public.user_articles ua ON a.id = ua.article_id
+            WHERE ua.user_id = $1
+              AND a.id != $3
+              AND a.embedding IS NOT NULL
+              AND (1 - (a.embedding <=> $2)) >= $4
+            ORDER BY similarity DESC
+            LIMIT $5;
+        `;
+        const rows: {
+            id: string;
+            title: string | null;
+            excerpt: string | null;
+            imageUrl: string | null;
+            url: string | null;
+            similarity: string | number;
+            isBookmarked: boolean;
+        }[] = await this.articlesRepository.query(sql, [
+            userId,
+            embeddingString,
+            articleId,
+            minSimilarity,
+            limit,
+        ]);
+
+        return rows.map((row) => ({
+            id: row.id,
+            title: row.title ?? undefined,
+            excerpt: row.excerpt ?? undefined,
+            imageUrl: row.imageUrl ?? undefined,
+            url: row.url ?? undefined,
+            similarity: parseFloat(String(row.similarity)) || 0,
+            isBookmarked: Boolean(row.isBookmarked),
+        }));
+    }
+
     async keywordSearch(query: string, userId: string, limit = 20): Promise<Article[]> {
         const searchTerm = `%${query}%`;
         const sql = `

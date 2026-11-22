@@ -1343,6 +1343,34 @@ export class ArticlesController {
         };
     }
 
+    @Get(':id/related')
+    async findRelated(
+        @CurrentUser() currentUser: ClerkUserProfile,
+        @Param('id') id: string,
+        @Query('limit') limitParam?: string,
+    ) {
+        const userId = await this.getUserId(currentUser);
+
+        if (id.startsWith('pasted-') || id.startsWith('url-only-')) {
+            return [];
+        }
+
+        const userArticleLink = await this.userArticlesService.findByUserAndArticle(userId, id);
+        if (!userArticleLink) {
+            throw new NotFoundException('Article not found');
+        }
+
+        const embedding = await this.articlesService.getEmbeddingVector(id);
+        if (!embedding || embedding.length === 0) {
+            return [];
+        }
+
+        const parsedLimit = limitParam ? parseInt(limitParam, 10) : 3;
+        const limit = Number.isFinite(parsedLimit) && parsedLimit > 0 ? Math.min(parsedLimit, 10) : 3;
+
+        return this.articlesService.findRelatedInUserLibrary(id, embedding, userId, limit);
+    }
+
     @Patch(':id')
     async updateById(
         @Param('id') id: string,
