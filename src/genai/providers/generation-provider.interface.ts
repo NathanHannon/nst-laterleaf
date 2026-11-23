@@ -3,6 +3,7 @@ export type GenerationProviderName = 'gemini' | 'openai-compatible';
 
 export interface TextGenerationRequest {
     prompt: string;
+    systemInstruction?: string;
     model: GenerationModel;
 }
 
@@ -10,6 +11,7 @@ export interface TextGenerationResult {
     text: string;
     model: string;
     inputTokens?: number;
+    cachedInputTokens?: number;
     outputTokens?: number;
     estimatedCostUsd?: number;
 }
@@ -20,9 +22,17 @@ export interface EmbeddingRequest {
     dimensions?: number;
 }
 
+export interface ChatTurnMessage {
+    role: 'user' | 'assistant';
+    content: string;
+}
+
 export interface ChatGenerationRequest {
     message: string;
     fullContextPrompt: string;
+    systemInstruction?: string;
+    history?: ChatTurnMessage[];
+    userPrompt?: string;
     previousInteractionId?: string;
     model: GenerationModel;
 }

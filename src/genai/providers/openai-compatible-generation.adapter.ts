@@ -36,23 +36,41 @@ export class OpenAiCompatibleGenerationAdapter implements GenerationProvider {
 
     async generateText(request: TextGenerationRequest): Promise<TextGenerationResult> {
         const model = this.getModel(request.model);
+        const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [];
+        if (request.systemInstruction) {
+            messages.push({ role: 'system', content: request.systemInstruction });
+        }
+        messages.push({ role: 'user', content: request.prompt });
+
         const completion = await this.getClient().chat.completions.create({
             model,
-            messages: [{ role: 'user', content: request.prompt }],
+            messages,
         });
 
         return {
             text: completion.choices[0]?.message.content || '',
             model,
             inputTokens: completion.usage?.prompt_tokens,
+            cachedInputTokens: completion.usage?.prompt_tokens_details?.cached_tokens,
             outputTokens: completion.usage?.completion_tokens,
         };
     }
 
     async generateChatReply(request: ChatGenerationRequest): Promise<ChatGenerationResult> {
+        const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = request.systemInstruction
+            ? [
+                { role: 'system', content: request.systemInstruction },
+                ...(request.history ?? []).map((msg) => ({
+                    role: msg.role,
+                    content: msg.content,
+                })),
+                { role: 'user', content: request.userPrompt ?? request.message },
+            ]
+            : [{ role: 'user', content: request.fullContextPrompt }];
+
         const completion = await this.getClient().chat.completions.create({
             model: this.getModel(request.model),
-            messages: [{ role: 'user', content: request.fullContextPrompt }],
+            messages,
         });
 
         return {

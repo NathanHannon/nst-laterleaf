@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import {
     Body,
     Controller,
@@ -23,11 +24,21 @@ interface ResearchResponse {
     sources: { id: string; title: string; url: string }[];
 }
 
+interface CachedResearchEntry {
+    response: ResearchResponse;
+    expiresAt: number;
+}
+
+const RESEARCH_CACHE_MAX_ENTRIES = 200;
+const RESEARCH_CACHE_TTL_MS = 30 * 60 * 1000; // 30 minutes
+
 /**
  */
 @UseGuards(ClerkAuthGuard)
 @Controller('articles')
 export class ResearchController {
+    private readonly reportCache = new Map<string, CachedResearchEntry>();
+
     constructor(
         private readonly usersService: UsersService,
         private readonly articlesService: ArticlesService,
@@ -36,9 +47,57 @@ export class ResearchController {
         private readonly genAiService: GenAiService,
     ) { }
 
+    private buildReportCacheKey(userId: string, query: string, limit: number, sourceIds: string[]): string {
+        const normalizedQuery = query.trim().replace(/\s+/g, ' ').toLowerCase();
+        const sortedSourceIds = [...sourceIds].sort();
+        return createHash('sha256')
+            .update(JSON.stringify([userId, normalizedQuery, limit, sortedSourceIds]))
+            .digest('hex');
+    }
+
+    private getCachedReport(key: string): ResearchResponse | undefined {
+        const entry = this.reportCache.get(key);
+        if (!entry) return undefined;
+        if (Date.now() > entry.expiresAt) {
+            this.reportCache.delete(key);
+            return undefined;
+        }
+        // Refresh LRU recency
+        this.reportCache.delete(key);
+        this.reportCache.set(key, entry);
+        return {
+            ...entry.response,
+            articleIds: [...entry.response.articleIds],
+            sources: entry.response.sources.map((s) => ({ ...s })),
+        };
+    }
+
+    private setCachedReport(key: string, response: ResearchResponse): void {
+        if (this.reportCache.has(key)) {
+            this.reportCache.delete(key);
+        } else if (this.reportCache.size >= RESEARCH_CACHE_MAX_ENTRIES) {
+            const oldestKey = this.reportCache.keys().next().value;
+            if (oldestKey !== undefined) {
+                this.reportCache.delete(oldestKey);
+            }
+        }
+        this.reportCache.set(key, {
+            response: {
+                ...response,
+                articleIds: [...response.articleIds],
+                sources: response.sources.map((s) => ({ ...s })),
+            },
+            expiresAt: Date.now() + RESEARCH_CACHE_TTL_MS,
+        });
+    }
+
+    clearReportCache(): void {
+        this.reportCache.clear();
+    }
+
     @Post('research')
     async researchArticles(
-        @Body() body: { query: string; limit?: number },
+        @Body() body: { query: string; limit?: number; force?: boolean },
         @CurrentUser() currentUser: ClerkUserProfile,
     ): Promise<ResearchResponse> {
         const user = await this.usersService.findByClerkId(currentUser.clerkId);
@@ -95,6 +154,19 @@ export class ResearchController {
             };
         }
 
+        const cacheKey = this.buildReportCacheKey(
+            user.id,
+            body.query,
+            limit,
+            sources.map((source) => source.id),
+        );
+        if (!body.force) {
+            const cached = this.getCachedReport(cacheKey);
+            if (cached) {
+                return cached;
+            }
+        }
+
         // 3. Retrieve the most relevant chunks across these articles for deep context.
         const relevantChunks = articles.length > 0
             ? await this.articleChunksService.findRelevantChunks(queryEmbedding, user.id, { limit: 12 })
@@ -109,11 +181,14 @@ export class ResearchController {
                 : undefined,
         );
 
-        return {
+        const response: ResearchResponse = {
             report,
             articleCount: sources.length,
             articleIds: sources.map((source) => source.id),
             sources: sources.map(({ id, title, url }) => ({ id, title, url })),
         };
+        this.setCachedReport(cacheKey, response);
+
+        return response;
     }
 }

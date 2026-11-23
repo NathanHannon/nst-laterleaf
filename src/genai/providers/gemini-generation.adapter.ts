@@ -32,6 +32,7 @@ export class GeminiGenerationAdapter implements GenerationProvider {
         const interaction = await this.getClient().interactions.create({
             model,
             input: request.prompt,
+            ...(request.systemInstruction ? { system_instruction: request.systemInstruction } : {}),
             store: false,
         });
 
@@ -39,6 +40,7 @@ export class GeminiGenerationAdapter implements GenerationProvider {
             text: interaction.output_text || '',
             model,
             inputTokens: interaction.usage?.total_input_tokens,
+            cachedInputTokens: interaction.usage?.total_cached_tokens,
             outputTokens: interaction.usage?.total_output_tokens,
         };
     }
@@ -60,8 +62,14 @@ export class GeminiGenerationAdapter implements GenerationProvider {
     async generateChatReply(request: ChatGenerationRequest): Promise<ChatGenerationResult> {
         const createParams: Record<string, unknown> = {
             model: this.getModel(request.model),
-            input: request.previousInteractionId ? request.message : request.fullContextPrompt,
+            input: request.previousInteractionId
+                ? (request.userPrompt ?? request.message)
+                : (request.systemInstruction ? (request.userPrompt ?? request.message) : request.fullContextPrompt),
         };
+
+        if (!request.previousInteractionId && request.systemInstruction) {
+            createParams.system_instruction = request.systemInstruction;
+        }
 
         if (request.previousInteractionId) {
             createParams.previous_interaction_id = request.previousInteractionId;

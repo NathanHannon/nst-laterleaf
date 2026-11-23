@@ -134,9 +134,21 @@ export class ChatController {
 
         // Fallback: if no chunks available, use truncated article content
         const articleSummary = userArticleLink.summary ? `\nSummary: ${userArticleLink.summary}\n` : '';
+        const fallbackArticleContent = chunkContext
+            ? ''
+            : `\n${(article.content || '').slice(0, userArticleLink.summary ? 4000 : 10000)}`;
+        const stableSystemInstruction = `You are a helpful AI assistant in a chat conversation about an article. The user is reading this article in their reading app and wants to discuss it with you.
+Format your responses using Markdown (bold, lists, code blocks, etc.) for readability. Keep responses concise but informative.
+
+Article: "${article.title}"${articleSummary}${fallbackArticleContent}`;
+
+        const userPrompt = chunkContext
+            ? `Relevant passages from the article for this question:\n${chunkContext}\n\nUser question: ${body.message}`
+            : body.message;
+
         const articleContent = chunkContext
             ? `\nRelevant passages from the article:\n${chunkContext}`
-            : `\n${(article.content || '').slice(0, userArticleLink.summary ? 4000 : 10000)}`;
+            : fallbackArticleContent;
         const articleContext = `Article: "${article.title}"\n${articleSummary}${articleContent}`;
         const recentHistory = existingHistory.slice(-20);
         const conversationHistory = recentHistory.map((msg) => `${msg.role}: ${msg.content}`).join('\n');
@@ -157,6 +169,9 @@ User: ${body.message}`;
             const { response, interactionId } = await this.genAiService.generateChatMessage({
                 message: body.message,
                 fullContextPrompt: prompt,
+                systemInstruction: stableSystemInstruction,
+                history: recentHistory.map(({ role, content }) => ({ role, content })),
+                userPrompt,
                 previousInteractionId,
             });
 

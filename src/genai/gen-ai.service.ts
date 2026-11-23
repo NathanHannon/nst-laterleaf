@@ -6,8 +6,88 @@ import { GEMINI_MODELS } from './constants/ai-models';
 import { PERSONA_PAIRS } from './interfaces/persona-parts.interface';
 import { AudioProcessingService } from './audio-processing.service';
 import { GenerationService } from './generation.service';
-import type { GenerationProviderName } from './providers/generation-provider.interface';
+import type { ChatTurnMessage, GenerationProviderName } from './providers/generation-provider.interface';
 import { calculateTextGenerationCost } from './constants/ai-pricing';
+
+const SUMMARY_SYSTEM_INSTRUCTION = `Create a concise, evidence-grounded reading brief for the provided article in the requested target language, aiming for the requested target word count and adjusting to the article's length and substance.
+
+Write a 1-2 sentence opening that states the author's central argument and how it is supported, not just the topic.
+
+## Key claims
+Number 3-5 of the article's most important claims in source order. Give each a short label and explain it briefly, preserving the author's reasoning. Do not add claims that the article does not support.
+
+## Keep in mind
+Include up to 3 important caveats, limitations, counterarguments, or uncertainties raised by the article. Omit this section if the article raises none.
+
+## Reading map
+When the article has clear headings or sections, list 3-6 of them in source order with a short phrase describing each. Omit this section if the source has no meaningful structure. Never invent headings, page numbers, or citations.
+
+Write headings and prose in the requested target language. Keep direct quotations in the article's original language. Be neutral, distinguish the author's claims from established facts, and do not infer beyond the provided text.`;
+
+const TRANSLATION_SYSTEM_INSTRUCTION = `You are a professional translator. Translate the provided text into the requested target language.
+
+CRITICAL INSTRUCTIONS:
+1. Preserve all Markdown formatting, links, and HTML structure exactly.
+2. Maintain the original tone.
+3. Output ONLY the translated text. No preamble.`;
+
+const PODCAST_SYSTEM_INSTRUCTION = `You are a world-class podcast scriptwriter.
+Roleplay a high-energy, collaborative "deep dive" conversation between two speakers ("Speaker 1" and "Speaker 2") about the provided article.
+The goal is to make the listener feel like they are eavesdropping on two friends who are genuinely excited to "geek out" over this specific content.
+
+STRICT RULES:
+1. Output labels MUST be "Speaker 1:" and "Speaker 2:". Do NOT use their names.
+2. BANNED PHRASES: Never use "delve", "dive in", "tapestry", "testament", "uncover", "in conclusion", or "to summarize".
+3. Do NOT include any stage directions, music cues, or metadata.
+4. STYLE: This is NOT a summary. It's a natural conversation with banter and joint discovery. They should build on each other's points ("Yes, and...", "Wait, that's wild because...").
+5. STRUCTURE: Start with a hook about why this matters, explore the most interesting parts of the content, and end with a "big picture" takeaway.
+6. Do NOT use the article title verbatim. Introduce the topic naturally.`;
+
+const RESEARCH_SYSTEM_INSTRUCTION = `You are a research assistant. The user wants to understand a topic based on articles they have saved.
+
+INSTRUCTIONS:
+1. Synthesize the information from the provided articles into a clear, structured research report that answers the user's query.
+2. Cite articles using short numbered references like [1], [2], [3] inline. Do NOT include article titles in inline citations.
+3. If articles present conflicting viewpoints, highlight the disagreement.
+4. If the articles don't sufficiently cover the query, say so honestly.
+5. Do NOT invent information that isn't in the provided articles.
+
+FORMAT:
+## Key Findings
+[2-4 bullet points summarizing the main insights]
+
+## Detailed Analysis
+[Structured paragraphs with inline [1], [2] citations]
+
+## Sources
+[List each cited source as: [N] "Article Title"]`;
+
+const SUGGEST_TAGS_SYSTEM_INSTRUCTION = `Suggest 3-5 concise, high-level tags for an article based on its title and content.
+
+Guidelines:
+- Use broad, helpful categories (e.g., "Technology", "Health", "Politics", "Cooking").
+- Avoid hyperspecific SEO keywords or names of people/companies unless they define the topic.
+- Respond ONLY with a JSON array of strings. Case: Title Case.
+Example: ["Technology", "Artificial Intelligence", "Future of Work"]`;
+
+const GENERATE_TAGS_SYSTEM_INSTRUCTION = `Analyze the provided article and generate up to the requested maximum number of relevant tags that categorize its content.
+
+Return only a JSON array of tag strings, no other text. Tags should be:
+- Single words or short phrases (2-3 words max)
+- Lowercase
+- General categories, topics, or themes
+- Useful for organizing and finding similar articles
+
+Example format: ["technology", "artificial intelligence", "business", "innovation", "startup"]`;
+
+const READING_METRICS_SYSTEM_INSTRUCTION = `Analyze the provided article and return helpful reading metrics (no quality judgments):
+1. Estimated reading time
+2. Reading difficulty level (beginner/intermediate/advanced)
+3. Primary topics/categories
+4. Article type (news, opinion, tutorial, research, etc.)
+5. Key concepts mentioned
+
+Format as JSON with no editorial commentary about quality or truthfulness.`;
 
 const LANGUAGE_MAP: Record<string, string> = {
     en: 'English',
@@ -173,13 +253,14 @@ export class GenAiService {
         inputTokens: number,
         outputTokens: number,
         model: string,
+        cachedInputTokens?: number,
     ): {
         inputCost?: number;
         outputCost?: number;
         totalCost?: number;
         model: string;
     } {
-        const cost = calculateTextGenerationCost(model, inputTokens, outputTokens);
+        const cost = calculateTextGenerationCost(model, inputTokens, outputTokens, cachedInputTokens);
 
         return {
             inputCost: cost?.inputCostUsd,
@@ -250,23 +331,11 @@ export class GenAiService {
      * @returns A promise that resolves to the parsed reading metrics as an object, or `null` if parsing fails.
      */
     async analyzeReadingMetrics(content: string, isProUser: boolean = false) {
-        const prompt = `Analyze this article and provide helpful reading metrics (no quality judgments):
-
-    Content: ${content}
-
-    Please provide:
-    1. Estimated reading time
-    2. Reading difficulty level (beginner/intermediate/advanced)
-    3. Primary topics/categories
-    4. Article type (news, opinion, tutorial, research, etc.)
-    5. Key concepts mentioned
-
-    Format as JSON with no editorial commentary about quality or truthfulness.`;
-
         const result = await this.withRetry(() =>
             this.generationService.generateText({
                 model: isProUser ? 'pro' : 'free',
-                prompt,
+                systemInstruction: READING_METRICS_SYSTEM_INSTRUCTION,
+                prompt: `Content:\n${content}`,
             }),
         );
 
@@ -286,21 +355,14 @@ export class GenAiService {
         // Use a smaller portion of content for tagging to save tokens
         const truncatedContent = content.substring(0, 2000);
 
-        const prompt = `Suggest 3-5 concise, high-level tags for an article with the following title and content.
-    Title: ${title}
-    Content: ${truncatedContent}
-
-    Guidelines:
-    - Use broad, helpful categories (e.g., "Technology", "Health", "Politics", "Cooking").
-    - Avoid hyperspecific SEO keywords or names of people/companies unless they define the topic.
-    - Respond ONLY with a JSON array of strings. Case: Title Case.
-    Example: ["Technology", "Artificial Intelligence", "Future of Work"]`;
+        const prompt = `Title: ${title}\nContent: ${truncatedContent}`;
 
         try {
             // Use FREE_TEXT model for everyone
             const result = await this.withRetry(() =>
                 this.generationService.generateText({
                     model: 'free',
+                    systemInstruction: SUGGEST_TAGS_SYSTEM_INSTRUCTION,
                     prompt,
                 }),
             );
@@ -351,29 +413,18 @@ export class GenAiService {
 
         console.log(`📏 Input sizing - Content tokens: ${contentTokens}, Target output: ${targetOutputTokens} tokens (${optimalWords} words)`);
 
-        const prompt = `Create a concise, evidence-grounded reading brief for this article in ${language}. Aim for about ${optimalWords} words, adjusting to the article's length and substance.
+        const prompt = `Target language: ${language}
+Target length: about ${optimalWords} words
 
-    Write a 1-2 sentence opening that states the author's central argument and how it is supported, not just the topic.
-
-    ## Key claims
-    Number 3-5 of the article's most important claims in source order. Give each a short label and explain it briefly, preserving the author's reasoning. Do not add claims that the article does not support.
-
-    ## Keep in mind
-    Include up to 3 important caveats, limitations, counterarguments, or uncertainties raised by the article. Omit this section if the article raises none.
-
-    ## Reading map
-    When the article has clear headings or sections, list 3-6 of them in source order with a short phrase describing each. Omit this section if the source has no meaningful structure. Never invent headings, page numbers, or citations.
-
-    Write headings and prose in ${language}. Keep direct quotations in the article's original language. Be neutral, distinguish the author's claims from established facts, and do not infer beyond the provided text.
-
-    ARTICLE:
-    ${processedContent}`;
+ARTICLE:
+${processedContent}`;
 
         // Calculate token usage
-        const inputTokens = this.estimateTokens(prompt);
+        const inputTokens = this.estimateTokens(`${SUMMARY_SYSTEM_INSTRUCTION}\n${prompt}`);
 
         const request = {
             model: 'free' as const,
+            systemInstruction: SUMMARY_SYSTEM_INSTRUCTION,
             prompt,
         };
         const result = await this.withRetry(
@@ -388,14 +439,14 @@ export class GenAiService {
         const totalTokens = actualInputTokens + outputTokens;
 
         // Calculate costs
-        const costs = this.calculateCost(actualInputTokens, outputTokens, result.model);
+        const costs = this.calculateCost(actualInputTokens, outputTokens, result.model, result.cachedInputTokens);
 
         console.log(`=== AI REQUEST COST ANALYSIS ===`);
         console.log(`Model: ${costs.model}`);
         console.log(`User tier: ${isProUser ? 'Pro' : 'Free'}`);
         console.log(`📊 Sizing ratio: ${contentTokens}:${outputTokens} (${(contentTokens / outputTokens).toFixed(1)}:1)`);
         console.log(`🎯 Target ratio: 10:1 | Optimal words: ${optimalWords}`);
-        console.log(`Input tokens: ${actualInputTokens.toLocaleString()}`);
+        console.log(`Input tokens: ${actualInputTokens.toLocaleString()}${result.cachedInputTokens ? ` (cached: ${result.cachedInputTokens.toLocaleString()})` : ''}`);
         console.log(`Output tokens: ${outputTokens.toLocaleString()}`);
         console.log(`Total tokens: ${totalTokens.toLocaleString()}`);
         console.log(`💰 Input cost: ${this.formatCost(costs.inputCost)}`);
@@ -420,22 +471,18 @@ export class GenAiService {
         const processedContent =
             content.length > maxChars ? content.substring(0, maxChars) + '\n\n[Translation truncated due to length...]' : content;
 
-        const prompt = `You are a professional translator. Translate the following text into ${targetLanguage}.
+        const prompt = `Target language: ${targetLanguage}
 
-    CRITICAL INSTRUCTIONS:
-    1. Preserve all Markdown formatting, links, and HTML structure exactly.
-    2. Maintain the original tone.
-    3. Output ONLY the translated text. No preamble.
-
-    Original Text:
-    ${processedContent}`;
+Original Text:
+${processedContent}`;
 
         // Calculate input tokens
-        const inputTokens = this.estimateTokens(prompt);
+        const inputTokens = this.estimateTokens(`${TRANSLATION_SYSTEM_INSTRUCTION}\n${prompt}`);
 
         const result = await this.withRetry(() =>
             this.generationService.generateText({
                 model: 'free',
+                systemInstruction: TRANSLATION_SYSTEM_INSTRUCTION,
                 prompt,
             }),
         );
@@ -444,7 +491,7 @@ export class GenAiService {
 
         const outputTokens = result.outputTokens ?? this.estimateTokens(translation);
         const actualInputTokens = result.inputTokens ?? inputTokens;
-        const costs = this.calculateCost(actualInputTokens, outputTokens, result.model);
+        const costs = this.calculateCost(actualInputTokens, outputTokens, result.model, result.cachedInputTokens);
 
         console.log(`=== AI TRANSLATION COST ===`);
         console.log(`Model: ${costs.model}`);
@@ -516,31 +563,22 @@ export class GenAiService {
      * @returns A promise that resolves to an array of tag strings.
      */
     async generateTags(content: string, maxTags: number = 5) {
-        const prompt = `Analyze this article and generate ${maxTags} relevant tags that categorize its content:
-
-    ${content}
-
-    Return only a JSON array of tag strings, no other text. Tags should be:
-    - Single words or short phrases (2-3 words max)
-    - Lowercase
-    - General categories, topics, or themes
-    - Useful for organizing and finding similar articles
-
-    Example format: ["technology", "artificial intelligence", "business", "innovation", "startup"]`;
+        const prompt = `Max tags: ${maxTags}\n\nArticle:\n${content}`;
 
         // Always use Flash-Lite for cost efficiency
-        const inputTokens = this.estimateTokens(prompt);
+        const inputTokens = this.estimateTokens(`${GENERATE_TAGS_SYSTEM_INSTRUCTION}\n${prompt}`);
 
         const result = await this.withRetry(() =>
             this.generationService.generateText({
                 model: 'free',
+                systemInstruction: GENERATE_TAGS_SYSTEM_INSTRUCTION,
                 prompt,
             }),
         );
 
         const outputTokens = result.outputTokens ?? this.estimateTokens(result.text);
         const actualInputTokens = result.inputTokens ?? inputTokens;
-        const costs = this.calculateCost(actualInputTokens, outputTokens, result.model);
+        const costs = this.calculateCost(actualInputTokens, outputTokens, result.model, result.cachedInputTokens);
 
         console.log(`=== AI TAG GENERATION COST ===`);
         console.log(`Model: ${costs.model}`);
@@ -645,40 +683,27 @@ export class GenAiService {
 
         const persona = PERSONA_PAIRS[personaId as keyof typeof PERSONA_PAIRS] || PERSONA_PAIRS['zephyr-charon'];
 
-        const prompt = `You are a world-class podcast scriptwriter.
-Roleplay a conversation between two speakers with the following traits:
-
+        const prompt = `Speaker traits:
 Speaker 1: ${persona.s1.trait}
 Speaker 2: ${persona.s2.trait}
 
-STRICT RULES:
-1. Output labels MUST be "Speaker 1:" and "Speaker 2:". Do NOT use their names.
-2. Style: ${persona.scriptStyle}. ${persona.scriptStyle.includes('professional')
+Script style: ${persona.scriptStyle}. ${persona.scriptStyle.includes('professional')
                 ? 'Be clear, concise, and professional. Avoid filler words.'
                 : 'Enforce realism with disfluencies like "um", "uh", "like", and natural stutters or self-corrections. One speaker should be the "explainer" and the other the "curious reactor".'
             }
-3. BANNED PHRASES: Never use "delve", "dive in", "tapestry", "testament", "uncover", "in conclusion", or "to summarize".
-5. Language: ${language ? `The entire conversation MUST be in ${language}. Translate any concepts naturally but keep the speakers' personalities.` : 'The conversation should be in English.'}
-4. Do NOT include any stage directions, music cues, or metadata.
-
-Generate a high-energy, collaborative "deep dive" conversation between Speaker 1 and Speaker 2 about this article.
-The goal is to make the listener feel like they are eavesdropping on two friends who are genuinely excited to "geek out" over this specific content.
+Language: ${language ? `The entire conversation MUST be in ${language}. Translate any concepts naturally but keep the speakers' personalities.` : 'The conversation should be in English.'}
+Target duration & tone: ${durationMap[duration]} with a ${style} tone.
+CRITICAL word limit: Total script must be under ${estimatedWords} words (TTS has strict ${maxTokens} token limit).
 
 ARTICLE: "${articleTitle}"
 ${content}
-
-REQUIREMENTS:
-1. Create a ${durationMap[duration]} with a ${style} tone.
-2. CRITICAL: Total script must be under ${estimatedWords} words (TTS has strict ${maxTokens} token limit).
-3. STYLE: This is NOT a summary. It's a natural conversation with banter and joint discovery. They should build on each other's points ("Yes, and...", "Wait, that's wild because...").
-4. STRUCTURE: Start with a hook about why this matters, explore the most interesting parts of the content, and end with a "big picture" takeaway.
-5. Do NOT use the article title verbatim. Introduce the topic naturally.
 
 REMEMBER: Stay under ${estimatedWords} words total.`;
 
         const result = await this.withRetry(() =>
             this.generationService.generateText({
                 model: 'podcast',
+                systemInstruction: PODCAST_SYSTEM_INSTRUCTION,
                 prompt,
             }),
         );
@@ -1388,6 +1413,9 @@ Instructions:
     async generateChatMessage(params: {
         message: string;
         fullContextPrompt: string;
+        systemInstruction?: string;
+        history?: ChatTurnMessage[];
+        userPrompt?: string;
         previousInteractionId?: string;
     }): Promise<{ response: string; interactionId: string }> {
         const result = await this.withRetry(() =>
@@ -1436,49 +1464,31 @@ Instructions:
                 .join('\n\n---\n\n');
         }
 
-        const prompt = `You are a research assistant. The user wants to understand a topic based on articles they have saved.
-
-USER QUERY: "${query}"
+        const prompt = `USER QUERY: "${query}"
 
 ARTICLES FROM THE USER'S LIBRARY:
-${sourceContext}
+${sourceContext}`;
 
-INSTRUCTIONS:
-1. Synthesize the information from these articles into a clear, structured research report that answers the user's query.
-2. Cite articles using short numbered references like [1], [2], [3] inline. Do NOT include article titles in inline citations.
-3. If articles present conflicting viewpoints, highlight the disagreement.
-4. If the articles don't sufficiently cover the query, say so honestly.
-5. Do NOT invent information that isn't in the provided articles.
-
-FORMAT:
-## Key Findings
-[2-4 bullet points summarizing the main insights]
-
-## Detailed Analysis
-[Structured paragraphs with inline [1], [2] citations]
-
-## Sources
-[List each cited source as: [N] "Article Title"]`;
-
-        const inputTokens = this.estimateTokens(prompt);
+        const inputTokens = this.estimateTokens(`${RESEARCH_SYSTEM_INSTRUCTION}\n${prompt}`);
 
         const result = await this.withRetry(() =>
             this.generationService.generateText({
                 model: 'free',
+                systemInstruction: RESEARCH_SYSTEM_INSTRUCTION,
                 prompt,
             }),
         );
 
         const outputTokens = result.outputTokens ?? this.estimateTokens(result.text);
         const actualInputTokens = result.inputTokens ?? inputTokens;
-        const costs = this.calculateCost(actualInputTokens, outputTokens, result.model);
+        const costs = this.calculateCost(actualInputTokens, outputTokens, result.model, result.cachedInputTokens);
 
         console.log(`=== AI RESEARCH REPORT COST ===`);
         console.log(`Model: ${costs.model}`);
         console.log(`Articles analyzed: ${articles.length}`);
         console.log(`Chunks used: ${chunks?.length ?? 0}`);
         console.log(`💰 Total cost: ${this.formatCost(costs.totalCost)}`);
-        console.log(`📊 Tokens: ${(actualInputTokens + outputTokens).toLocaleString()}`);
+        console.log(`📊 Tokens: ${(actualInputTokens + outputTokens).toLocaleString()}${result.cachedInputTokens ? ` (cached: ${result.cachedInputTokens.toLocaleString()})` : ''}`);
         console.log(`================================`);
 
         return result.text;

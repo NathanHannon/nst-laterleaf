@@ -26,6 +26,7 @@ describe('GenerationService', () => {
 
     afterEach(() => {
         jest.clearAllMocks();
+        service.clearEmbeddingCache();
         if (originalProvider === undefined) {
             delete process.env.GENERATION_PROVIDER;
         } else {
@@ -122,5 +123,68 @@ describe('GenerationService', () => {
         await expect(service.generateEmbeddings(embeddingRequest)).resolves.toEqual([0.1, 0.2]);
         expect(gemini.generateEmbeddings).toHaveBeenCalledWith(embeddingRequest);
         expect(openAiCompatible.generateEmbeddings).not.toHaveBeenCalled();
+    });
+
+    it('caches search_query embeddings with case and whitespace normalization', async () => {
+        jest.mocked(gemini.generateEmbeddings).mockResolvedValue([0.25, 0.5]);
+
+        const first = await service.generateEmbeddings({
+            content: '  AI   Agents  ',
+            purpose: 'search_query',
+            dimensions: 768,
+        });
+        const second = await service.generateEmbeddings({
+            content: 'ai agents',
+            purpose: 'search_query',
+            dimensions: 768,
+        });
+
+        expect(first).toEqual([0.25, 0.5]);
+        expect(second).toEqual([0.25, 0.5]);
+        expect(gemini.generateEmbeddings).toHaveBeenCalledTimes(1);
+
+        // Mutating the returned array must not corrupt the cached vector
+        first[0] = 999;
+        const third = await service.generateEmbeddings({
+            content: 'ai agents',
+            purpose: 'search_query',
+            dimensions: 768,
+        });
+        expect(third).toEqual([0.25, 0.5]);
+    });
+
+    it('does not cache article_storage embeddings or empty vectors', async () => {
+        jest.mocked(gemini.generateEmbeddings).mockResolvedValue([0.1, 0.2]);
+
+        await service.generateEmbeddings({
+            content: 'same article text',
+            purpose: 'article_storage',
+            dimensions: 768,
+        });
+        await service.generateEmbeddings({
+            content: 'same article text',
+            purpose: 'article_storage',
+            dimensions: 768,
+        });
+        expect(gemini.generateEmbeddings).toHaveBeenCalledTimes(2);
+
+        jest.mocked(gemini.generateEmbeddings).mockResolvedValue([]);
+        await service.generateEmbeddings({ content: 'empty query', purpose: 'search_query' });
+        await service.generateEmbeddings({ content: 'empty query', purpose: 'search_query' });
+        expect(gemini.generateEmbeddings).toHaveBeenCalledTimes(4);
+    });
+
+    it('factors cachedInputTokens into estimatedCostUsd', async () => {
+        process.env.GENERATION_PROVIDER = 'gemini';
+        jest.mocked(gemini.generateText).mockResolvedValue({
+            text: 'Cached response',
+            model: 'gemini-3-flash-preview',
+            inputTokens: 1_000_000,
+            cachedInputTokens: 800_000,
+            outputTokens: 0,
+        });
+
+        const result = await service.generateText(request);
+        expect(result.estimatedCostUsd).toBe(0.14);
     });
 });

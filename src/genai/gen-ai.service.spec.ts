@@ -27,9 +27,10 @@ describe('GenAiService', () => {
         const firstRequest = generationService.generateTextWithProvider.mock.calls[0][1];
         const secondRequest = generationService.generateTextWithProvider.mock.calls[1][1];
         expect(secondRequest).toEqual(firstRequest);
-        expect(firstRequest.prompt).toContain('## Key claims');
-        expect(firstRequest.prompt).toContain('## Keep in mind');
-        expect(firstRequest.prompt).toContain('## Reading map');
+        expect(firstRequest.systemInstruction).toContain('## Key claims');
+        expect(firstRequest.systemInstruction).toContain('## Keep in mind');
+        expect(firstRequest.systemInstruction).toContain('## Reading map');
+        expect(firstRequest.prompt).toContain('Article content');
         expect(logSpy).toHaveBeenCalledWith('Model: gpt-6-luna');
 
         logSpy.mockRestore();
