@@ -13,13 +13,47 @@ export class CuratedArticlesService {
         private readonly curatedArticlesRepository: Repository<CuratedArticle>,
     ) { }
 
-    /** Used by the public Discover page: latest curated articles first, excluding podcast/audio/video URLs. */
+    /**
+     * Used by the public Discover page: latest curated articles first,
+     * excluding podcast/audio/video URLs and round-robin interleaved by
+     * `feedId` so a single prolific feed cannot monopolize the carousel.
+     */
     async findLatest(limit: number): Promise<CuratedArticle[]> {
+        if (limit <= 0) return [];
         const candidates = await this.curatedArticlesRepository.find({
             order: { fetchedAt: 'DESC' },
-            take: Math.min(Math.max(limit * 2, limit), 200),
+            take: Math.min(Math.max(limit * 4, limit), 200),
         });
-        return candidates.filter((article) => !isNonArticleUrl(article.url)).slice(0, limit);
+        const valid = candidates.filter((article) => !isNonArticleUrl(article.url));
+
+        // Group by feedId (preserving newest-first order within each feed and
+        // ordering feeds by their most recent article).
+        const byFeed = new Map<string, CuratedArticle[]>();
+        for (const article of valid) {
+            const key = article.feedId || `ungrouped-${article.id}`;
+            const bucket = byFeed.get(key) ?? [];
+            bucket.push(article);
+            byFeed.set(key, bucket);
+        }
+
+        const buckets = Array.from(byFeed.values());
+        const interleaved: CuratedArticle[] = [];
+        let round = 0;
+
+        while (interleaved.length < limit) {
+            let addedInRound = false;
+            for (const bucket of buckets) {
+                if (round < bucket.length) {
+                    interleaved.push(bucket[round]);
+                    addedInRound = true;
+                    if (interleaved.length >= limit) break;
+                }
+            }
+            if (!addedInRound) break;
+            round++;
+        }
+
+        return interleaved;
     }
 
     findByFeedId(feedId: string): Promise<CuratedArticle[]> {

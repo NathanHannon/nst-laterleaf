@@ -55,14 +55,16 @@ export class TagsController {
         // 2. Get existing tags to exclude them from suggestions.
         const existingLinks = await this.userArticleTagsService.findByUserArticleId(userArticleId);
         const existingTags = await this.tagsService.findByIds(existingLinks.map((link) => link.tagId));
-        const existingTagNames = existingTags.map((tag) => tag.name.toLowerCase());
+        const seenTagNames = new Set(existingTags.map((tag) => tag.name.toLowerCase()));
 
         const suggestions: Tag[] = [];
 
         // AI-suggested tags stored on the UserArticle (from summarization).
         if (userArticle.suggestedTags && Array.isArray(userArticle.suggestedTags)) {
             for (const tagName of userArticle.suggestedTags) {
-                if (!existingTagNames.includes(tagName.toLowerCase())) {
+                const normalized = tagName.toLowerCase().trim();
+                if (normalized && !seenTagNames.has(normalized)) {
+                    seenTagNames.add(normalized);
                     suggestions.push({ name: tagName, id: `suggested-${tagName}` } as Tag);
                 }
             }
@@ -72,7 +74,9 @@ export class TagsController {
         const existingTagIds = existingTags.map((tag) => tag.id).filter(Boolean);
         const similarTags = await this.tagsService.findSimilar(embedding, existingTagIds, 5);
         for (const tagWithScore of similarTags) {
-            if (!existingTagNames.includes(tagWithScore.name.toLowerCase())) {
+            const normalized = tagWithScore.name.toLowerCase().trim();
+            if (normalized && !seenTagNames.has(normalized)) {
+                seenTagNames.add(normalized);
                 suggestions.push(tagWithScore);
             }
         }

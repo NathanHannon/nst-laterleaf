@@ -94,22 +94,30 @@ export class CollectionSuggestionController {
                 .map((articleId) => embeddingsByArticleId.get(articleId))
                 .filter((embedding): embedding is number[] => !!embedding && embedding.length > 0);
 
-            // Require at least 3 articles to form a valid "collection vibe".
-            if (validEmbeddings.length < 3) {
+            // Require at least 2 articles to form a valid collection signal.
+            if (validEmbeddings.length < 2) {
                 return { name: collection.name, score: 0, count: validEmbeddings.length };
             }
 
-            const avgEmbedding = new Array(768).fill(0);
+            const dim = validEmbeddings[0].length;
+            const avgEmbedding = new Array<number>(dim).fill(0);
             for (const vec of validEmbeddings) {
-                for (let i = 0; i < 768; i++) {
+                for (let i = 0; i < dim; i++) {
                     avgEmbedding[i] += vec[i];
                 }
             }
-            for (let i = 0; i < 768; i++) {
+            for (let i = 0; i < dim; i++) {
                 avgEmbedding[i] /= validEmbeddings.length;
             }
 
-            const similarity = this.cosineSimilarity(targetEmbedding!, avgEmbedding);
+            const centroidSim = this.cosineSimilarity(targetEmbedding!, avgEmbedding);
+            // Hybrid with top-2 nearest articles so broader multi-topic collections don't wash out.
+            const itemSims = validEmbeddings
+                .map((vec) => this.cosineSimilarity(targetEmbedding!, vec))
+                .sort((a, b) => b - a);
+            const topK = itemSims.slice(0, 2);
+            const topKMeanSim = topK.reduce((sum, v) => sum + v, 0) / topK.length;
+            const similarity = 0.5 * centroidSim + 0.5 * topKMeanSim;
             return { name: collection.name, score: similarity, count: validEmbeddings.length };
         });
 

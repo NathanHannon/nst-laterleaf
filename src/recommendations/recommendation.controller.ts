@@ -43,8 +43,9 @@ export class RecommendationController {
 
         const savedArticles = await this.userArticlesService.findAllForUser(user.id);
 
-        // Always try personalized first if the user has enough saved articles.
-        if (savedArticles.length >= 5) {
+        // Try personalized recommendations as soon as the user has at least 1 saved article
+        // (1-4 saved articles use single-centroid cold-start blended with popular picks).
+        if (savedArticles.length >= 1) {
             const personalizedArticles = await this.recommendationService.generateForUser(
                 user.id,
                 12,

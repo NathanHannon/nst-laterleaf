@@ -44,21 +44,19 @@ export class TagsService {
 
     /**
      * Finds the tags whose embeddings are most similar (pgvector cosine
-     * distance) to the given embedding, excluding `excludeIds`. Mirrors
-     * `TagRepository.findSimilar` in lb-laterleaf.
+     * distance) to the given embedding, excluding `excludeIds` and filtering
+     * out low-relevance matches below `minSimilarity`.
      */
     async findSimilar(
         embedding: number[],
         excludeIds: string[] = [],
         limit = 5,
+        minSimilarity = 0.45,
     ): Promise<(Tag & { similarity: number })[]> {
         const embeddingString = `[${embedding.join(',')}]`;
-        const exclusionClause =
-            excludeIds.length > 0
-                ? `AND id NOT IN (${excludeIds.map((id) => `'${id}'`).join(',')})`
-                : '';
+        const maxDistance = 1 - minSimilarity;
 
-        const query = `
+        const baseSelect = `
             SELECT
                 id,
                 name,
@@ -66,12 +64,25 @@ export class TagsService {
                 updated_at as "updatedAt",
                 1 - (embedding <=> $1) as similarity
             FROM public.tags
-            WHERE embedding IS NOT NULL ${exclusionClause}
-            ORDER BY similarity DESC
-            LIMIT $2;
-        `;
+            WHERE embedding IS NOT NULL
+              AND (embedding <=> $1) <= $2`;
 
-        return this.tagsRepository.query(query, [embeddingString, limit]);
+        if (excludeIds.length > 0) {
+            const query = `
+                ${baseSelect}
+                  AND id != ALL($3)
+                ORDER BY embedding <=> $1 ASC
+                LIMIT $4;
+            `;
+            return this.tagsRepository.query(query, [embeddingString, maxDistance, excludeIds, limit]);
+        }
+
+        const query = `
+            ${baseSelect}
+            ORDER BY embedding <=> $1 ASC
+            LIMIT $3;
+        `;
+        return this.tagsRepository.query(query, [embeddingString, maxDistance, limit]);
     }
 
     async updateByIds(ids: string[], partial: Partial<Tag>): Promise<number> {

@@ -9,6 +9,128 @@ import {
 } from 'typeorm';
 import { Article } from './entities/article.entity';
 
+export interface RecommendationCandidate extends Article {
+    semanticScore: number;
+    weightedScore: number;
+    embeddingVector?: number[];
+}
+
+export interface RelatedLibraryArticle {
+    id: string;
+    title?: string;
+    excerpt?: string;
+    imageUrl?: string;
+    url?: string;
+    siteName?: string;
+    readingTime: number;
+    similarity: number;
+    isBookmarked: boolean;
+    isArchived: boolean;
+    status: string;
+    progressPercentage: number;
+    savedAt?: string;
+    sharedTagCount: number;
+}
+
+/**
+ * Computes an anti-graveyard resurfacing score for related articles already in
+ * the user's library. Keeps semantic similarity as the foundation while
+ * prioritizing unfinished and forgotten unread saves, rewarding shared tags
+ * and bite-sized quick wins, and gently down-ranking already-read/archived items.
+ */
+export function computeRelatedLibraryScore(params: {
+    similarity: number;
+    status?: string;
+    isArchived?: boolean;
+    progressPercentage?: number;
+    savedAt?: Date | string | null;
+    readingTime?: number;
+    sharedTagCount?: number;
+    nowMs?: number;
+}): number {
+    const similarity = Math.max(0, Math.min(1, params.similarity || 0));
+    const progress = Math.max(0, Math.min(100, Number(params.progressPercentage) || 0));
+    const status = (params.status || 'unread').toLowerCase();
+    const isFinished =
+        Boolean(params.isArchived) ||
+        status === 'read' ||
+        status === 'archived' ||
+        progress >= 80;
+    const isInProgress = !isFinished && progress > 0;
+
+    // Prioritize unfinished ("finish what you started") and unread backlog over already-read saves.
+    const statusMultiplier = isInProgress ? 1.28 : !isFinished ? 1.22 : 0.78;
+
+    let bonus = 0;
+
+    // Gentle "dusty backlog" bonus for unread/in-progress saves sitting 14+ days.
+    if (!isFinished && params.savedAt) {
+        const nowMs = params.nowMs ?? Date.now();
+        const savedMs = new Date(params.savedAt).getTime();
+        if (Number.isFinite(savedMs)) {
+            const daysSaved = Math.max(0, (nowMs - savedMs) / (1000 * 60 * 60 * 24));
+            if (daysSaved >= 14) {
+                bonus += 0.08 * Math.min(1, (daysSaved - 14) / 76);
+            }
+        }
+    }
+
+    // Small quick-win nudge for bite-sized unread articles (2-7 min read).
+    const readingTime = Number(params.readingTime) || 0;
+    if (!isFinished && readingTime >= 2 && readingTime <= 7) {
+        bonus += 0.03;
+    }
+
+    // Explicit personal connection via shared user tags.
+    const sharedTags = Math.max(0, Number(params.sharedTagCount) || 0);
+    if (sharedTags > 0) {
+        bonus += Math.min(0.1, sharedTags * 0.05);
+    }
+
+    return similarity * statusMultiplier + bonus;
+}
+
+function parsePgVector(raw: string | undefined | null): number[] | undefined {
+    if (!raw || raw.length < 2) return undefined;
+    const values = raw
+        .slice(1, -1)
+        .split(',')
+        .map((n) => parseFloat(n));
+    return values.length > 0 && Number.isFinite(values[0]) ? values : undefined;
+}
+
+/**
+ * Computes a pool-independent, semantic-gated score combining:
+ * - Semantic cosine similarity (primary driver)
+ * - Log-scaled bookmark/save volume + Bayesian bookmark-to-save quality ratio
+ * - Gentle freshness boost (preserves evergreen articles)
+ */
+export function computeCandidateScore(params: {
+    semanticScore: number;
+    bookmarkCount: number;
+    saveCount: number;
+    publishedOrCreatedAt?: Date | string | null;
+    nowMs?: number;
+}): number {
+    const semanticScore = Math.max(0, Math.min(1, params.semanticScore || 0));
+    const bookmarks = Math.max(0, Number(params.bookmarkCount) || 0);
+    const saves = Math.max(0, Number(params.saveCount) || 0);
+
+    const bookmarkSignal = Math.min(1, Math.log1p(bookmarks) / Math.log1p(50));
+    const saveSignal = Math.min(1, Math.log1p(saves) / Math.log1p(100));
+    // Bayesian conversion rate: rewards articles that a high share of savers bookmark.
+    const qualityRatio = Math.min(1, (bookmarks + 0.5) / (saves + 3));
+    const popularityScore = 0.5 * bookmarkSignal + 0.2 * saveSignal + 0.3 * qualityRatio;
+
+    const nowMs = params.nowMs ?? Date.now();
+    const refMs = params.publishedOrCreatedAt ? new Date(params.publishedOrCreatedAt).getTime() : NaN;
+    const ageDays = Number.isFinite(refMs) ? Math.max(0, (nowMs - refMs) / (1000 * 60 * 60 * 24)) : 180;
+    // Half-life ~230 days, applied as a gentle 0.88..1.00 multiplier so evergreen articles remain competitive.
+    const freshnessMultiplier = 0.88 + 0.12 * Math.exp(-0.003 * ageDays);
+
+    return semanticScore * (0.72 + 0.28 * popularityScore) * freshnessMultiplier;
+}
+
 @Injectable()
 export class ArticlesService {
     constructor(
@@ -228,27 +350,20 @@ export class ArticlesService {
 
     /**
      * Finds articles in the user's library that are semantically related to
-     * the given article using pgvector cosine similarity, excluding the
-     * source article itself.
+     * the given article using pgvector cosine similarity, then re-ranks them
+     * with an anti-graveyard score that surfaces unread, in-progress, and
+     * forgotten older saves ahead of already-read items.
      */
     async findRelatedInUserLibrary(
         articleId: string,
         embedding: number[],
         userId: string,
         limit = 3,
-        minSimilarity = 0.5,
-    ): Promise<
-        {
-            id: string;
-            title?: string;
-            excerpt?: string;
-            imageUrl?: string;
-            url?: string;
-            similarity: number;
-            isBookmarked: boolean;
-        }[]
-    > {
+        minSimilarity = 0.45,
+    ): Promise<RelatedLibraryArticle[]> {
         const embeddingString = `[${embedding.join(',')}]`;
+        const maxDistance = 1 - minSimilarity;
+        const candidatePoolLimit = Math.max(limit * 5, 20);
         const sql = `
             SELECT
                 a.id,
@@ -256,15 +371,31 @@ export class ArticlesService {
                 a.excerpt,
                 a.image_url AS "imageUrl",
                 a.url,
+                a.site_name AS "siteName",
+                COALESCE(a.reading_time, 0) AS "readingTime",
                 (1 - (a.embedding <=> $2)) AS similarity,
-                COALESCE(ua.is_bookmarked, false) AS "isBookmarked"
+                COALESCE(ua.is_bookmarked, false) AS "isBookmarked",
+                COALESCE(ua.is_archived, false) AS "isArchived",
+                COALESCE(ua.status, 'unread') AS status,
+                COALESCE(ua.progress_percentage, 0) AS "progressPercentage",
+                ua.created_at AS "savedAt",
+                COALESCE((
+                    SELECT COUNT(DISTINCT uat_other.tag_id)
+                    FROM public.user_article_tags uat_other
+                    INNER JOIN public.user_article_tags uat_src ON uat_other.tag_id = uat_src.tag_id
+                    INNER JOIN public.user_articles ua_src ON uat_src.user_article_id = ua_src.id
+                    WHERE uat_other.user_article_id = ua.id
+                      AND ua_src.user_id = $1
+                      AND ua_src.article_id = $3
+                ), 0) AS "sharedTagCount"
             FROM public.articles a
             INNER JOIN public.user_articles ua ON a.id = ua.article_id
             WHERE ua.user_id = $1
               AND a.id != $3
               AND a.embedding IS NOT NULL
-              AND (1 - (a.embedding <=> $2)) >= $4
-            ORDER BY similarity DESC
+              AND (a.embedding <=> $2) <= $4
+              AND (a.embedding <=> $2) > 0.02
+            ORDER BY a.embedding <=> $2 ASC
             LIMIT $5;
         `;
         const rows: {
@@ -273,25 +404,67 @@ export class ArticlesService {
             excerpt: string | null;
             imageUrl: string | null;
             url: string | null;
+            siteName: string | null;
+            readingTime: string | number | null;
             similarity: string | number;
             isBookmarked: boolean;
+            isArchived: boolean;
+            status: string | null;
+            progressPercentage: string | number | null;
+            savedAt: Date | string | null;
+            sharedTagCount: string | number | null;
         }[] = await this.articlesRepository.query(sql, [
             userId,
             embeddingString,
             articleId,
-            minSimilarity,
-            limit,
+            maxDistance,
+            candidatePoolLimit,
         ]);
 
-        return rows.map((row) => ({
-            id: row.id,
-            title: row.title ?? undefined,
-            excerpt: row.excerpt ?? undefined,
-            imageUrl: row.imageUrl ?? undefined,
-            url: row.url ?? undefined,
-            similarity: parseFloat(String(row.similarity)) || 0,
-            isBookmarked: Boolean(row.isBookmarked),
-        }));
+        const nowMs = Date.now();
+        return rows
+            .map((row) => {
+                const similarity = parseFloat(String(row.similarity)) || 0;
+                const readingTime = Number(row.readingTime) || 0;
+                const progressPercentage = Number(row.progressPercentage) || 0;
+                const sharedTagCount = Number(row.sharedTagCount) || 0;
+                const status = row.status || 'unread';
+                const isArchived = Boolean(row.isArchived);
+                const savedAt = row.savedAt ? new Date(row.savedAt).toISOString() : undefined;
+
+                const item: RelatedLibraryArticle = {
+                    id: row.id,
+                    title: row.title ?? undefined,
+                    excerpt: row.excerpt ?? undefined,
+                    imageUrl: row.imageUrl ?? undefined,
+                    url: row.url ?? undefined,
+                    siteName: row.siteName ?? undefined,
+                    readingTime,
+                    similarity,
+                    isBookmarked: Boolean(row.isBookmarked),
+                    isArchived,
+                    status,
+                    progressPercentage,
+                    savedAt,
+                    sharedTagCount,
+                };
+
+                const score = computeRelatedLibraryScore({
+                    similarity,
+                    status,
+                    isArchived,
+                    progressPercentage,
+                    savedAt,
+                    readingTime,
+                    sharedTagCount,
+                    nowMs,
+                });
+
+                return { item, score };
+            })
+            .sort((a, b) => b.score - a.score)
+            .slice(0, limit)
+            .map(({ item }) => item);
     }
 
     async keywordSearch(query: string, userId: string, limit = 20): Promise<Article[]> {
@@ -317,19 +490,22 @@ export class ArticlesService {
     }
 
     /**
-     * Finds articles similar to a given embedding vector with weighted
-     * scoring. Combines semantic similarity (60%), bookmark count (30%),
-     * and save count (10%). Mirrors ArticleRepository.findSimilarWeighted.
+     * Finds articles similar to a given embedding vector using an index-friendly
+     * pgvector cosine distance search (`ORDER BY embedding <=> $1 ASC`), then
+     * scores candidates with a pool-independent semantic-gated popularity &
+     * freshness formula so scores remain directly comparable across clusters.
      */
     async findSimilarWeighted(
         targetEmbedding: number[],
-        options: { limit?: number; excludeIds?: string[] } = {},
-    ): Promise<(Article & { weightedScore: number })[]> {
-        const { limit = 10, excludeIds = [] } = options;
+        options: { limit?: number; excludeIds?: string[]; minSimilarity?: number } = {},
+    ): Promise<RecommendationCandidate[]> {
+        const { limit = 10, excludeIds = [], minSimilarity = 0.35 } = options;
         const embeddingString = `[${targetEmbedding.join(',')}]`;
+        const maxDistance = 1 - minSimilarity;
+        const fetchLimit = Math.max(limit * 3, 60);
 
         let sql: string;
-        const params: unknown[] = [embeddingString];
+        const params: unknown[] = [embeddingString, maxDistance];
 
         const baseSelect = `
             SELECT
@@ -338,23 +514,25 @@ export class ArticlesService {
               publish_date as "publishDate",
               created_at as "createdAt",
               updated_at as "updatedAt",
-              content,
               is_eligible_for_recommendation as "isEligibleForRecommendation",
               site_name as "siteName",
+              reading_time as "readingTime",
               COALESCE(bookmark_count, 0) as bookmark_count,
               COALESCE(save_count, 0) as save_count,
+              embedding::text as embedding_text,
               (embedding <=> $1) as cosine_distance,
               (1 - (embedding <=> $1)) as semantic_score
             FROM articles
             WHERE embedding IS NOT NULL
-              AND is_eligible_for_recommendation = true`;
+              AND is_eligible_for_recommendation = true
+              AND (embedding <=> $1) <= $2`;
 
         if (excludeIds.length > 0) {
-            sql = `${baseSelect} AND id != ALL($2) ORDER BY semantic_score DESC LIMIT $3;`;
-            params.push(excludeIds, Math.max(limit * 3, 100));
+            sql = `${baseSelect} AND id != ALL($3) ORDER BY embedding <=> $1 ASC LIMIT $4;`;
+            params.push(excludeIds, fetchLimit);
         } else {
-            sql = `${baseSelect} ORDER BY semantic_score DESC LIMIT $2;`;
-            params.push(Math.max(limit * 3, 100));
+            sql = `${baseSelect} ORDER BY embedding <=> $1 ASC LIMIT $3;`;
+            params.push(fetchLimit);
         }
 
         const rawResults: any[] = await this.articlesRepository.query(sql, params);
@@ -362,19 +540,19 @@ export class ArticlesService {
             return [];
         }
 
-        // Normalize popularity counts to 0-1 range using the actual max values
-        // in this result set, so popular articles get fair weight regardless
-        // of absolute numbers.
-        const maxBookmarks = Math.max(...rawResults.map((r) => Number(r.bookmark_count)), 1);
-        const maxSaves = Math.max(...rawResults.map((r) => Number(r.save_count)), 1);
-
+        const nowMs = Date.now();
         const articlesWithScores = rawResults.map((row) => {
             const semanticScore = parseFloat(row.semantic_score) || 0;
-            const normalizedBookmarks = Number(row.bookmark_count) / maxBookmarks;
-            const normalizedSaves = Number(row.save_count) / maxSaves;
+            const bookmarkCount = Number(row.bookmark_count) || 0;
+            const saveCount = Number(row.save_count) || 0;
 
-            // Weights: 60% semantic, 30% bookmarks, 10% saves
-            const weightedScore = 0.6 * semanticScore + 0.3 * normalizedBookmarks + 0.1 * normalizedSaves;
+            const weightedScore = computeCandidateScore({
+                semanticScore,
+                bookmarkCount,
+                saveCount,
+                publishedOrCreatedAt: row.publishDate ?? row.createdAt,
+                nowMs,
+            });
 
             const article = Object.assign(new Article(), {
                 id: row.id,
@@ -386,12 +564,15 @@ export class ArticlesService {
                 publishDate: row.publishDate,
                 createdAt: row.createdAt,
                 updatedAt: row.updatedAt,
-                content: row.content,
+                siteName: row.siteName,
+                readingTime: Number(row.readingTime) || 0,
                 isEligibleForRecommendation: row.isEligibleForRecommendation,
-                bookmarkCount: Number(row.bookmark_count),
-                saveCount: Number(row.save_count),
-            }) as Article & { weightedScore: number };
+                bookmarkCount,
+                saveCount,
+            }) as RecommendationCandidate;
+            article.semanticScore = semanticScore;
             article.weightedScore = weightedScore;
+            article.embeddingVector = parsePgVector(row.embedding_text);
             return article;
         });
 
@@ -399,9 +580,9 @@ export class ArticlesService {
     }
 
     /**
-     * Fetches a pool of popular articles (by weighted bookmark/save count),
-     * excluding the given ids. Mirrors the popularity-ranking query in
-     * RecommendationService.getPopularArticles.
+     * Fetches a pool of popular articles ranked by log-scaled bookmark/save
+     * engagement with gentle freshness gravity so older articles do not
+     * permanently camp at the top of the feed.
      */
     async findPopular(excludeIds: string[], poolSize: number): Promise<Article[]> {
         const baseSelect = `
@@ -410,26 +591,28 @@ export class ArticlesService {
               publish_date as "publishDate",
               created_at as "createdAt",
               updated_at as "updatedAt",
-              content,
               is_eligible_for_recommendation as "isEligibleForRecommendation",
               site_name as "siteName",
+              reading_time as "readingTime",
               COALESCE(bookmark_count, 0) as "bookmarkCount",
               COALESCE(save_count, 0) as "saveCount"
             FROM articles
             WHERE is_eligible_for_recommendation = true`;
 
+        const orderByClause = `
+            ORDER BY (
+                (LN(1 + COALESCE(bookmark_count, 0)) * 0.75 + LN(1 + COALESCE(save_count, 0)) * 0.25 + 0.1)
+                / POWER(GREATEST(0, EXTRACT(EPOCH FROM (NOW() - COALESCE(publish_date, created_at))) / 86400.0) + 7.0, 0.35)
+            ) DESC`;
+
         let sql: string;
         const params: unknown[] = [];
 
         if (excludeIds.length > 0) {
-            sql = `${baseSelect} AND id != ALL($1)
-                ORDER BY (COALESCE(bookmark_count, 0) * 0.75 + COALESCE(save_count, 0) * 0.25) DESC
-                LIMIT $2;`;
+            sql = `${baseSelect} AND id != ALL($1) ${orderByClause} LIMIT $2;`;
             params.push(excludeIds, poolSize);
         } else {
-            sql = `${baseSelect}
-                ORDER BY (COALESCE(bookmark_count, 0) * 0.75 + COALESCE(save_count, 0) * 0.25) DESC
-                LIMIT $1;`;
+            sql = `${baseSelect} ${orderByClause} LIMIT $1;`;
             params.push(poolSize);
         }
 
